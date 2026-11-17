@@ -588,15 +588,19 @@ def _txn_rows(qs):
 
 
 def build_report(name, employee, params):
-    """Returns dict(title, headers, rows, summary). Cashiers only ever get their own shift."""
+    """Returns dict(title, headers, rows, summary). Cashiers only ever get their own branch."""
     today = timezone.localdate()
     start = params.get("start") or today
     end = params.get("end") or start
     if name == "daily":
-        qs = Transaction.objects.filter(created_at__date__gte=start, created_at__date__lte=end).select_related(
+        from datetime import datetime, time, timedelta
+        tz = timezone.get_current_timezone()
+        start_dt = timezone.make_aware(datetime.combine(start, time.min), tz)
+        end_dt = timezone.make_aware(datetime.combine(end + timedelta(days=1), time.min), tz)
+        qs = Transaction.objects.filter(created_at__gte=start_dt, created_at__lt=end_dt).select_related(
             "customer", "transaction_type", "employee")
         if not employee.user.is_admin_role:
-            qs = qs.filter(employee=employee)
+            qs = qs.filter(branch=employee.branch)
         rows = _txn_rows(qs.order_by("created_at"))
         total = sum((t.amount for t in qs.exclude(status="Voided")), ZERO)
         return {"title": f"Daily Transaction Report ({start} to {end})",

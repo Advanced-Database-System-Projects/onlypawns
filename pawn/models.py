@@ -451,6 +451,7 @@ class SupportTicket(models.Model):
     status = models.CharField(max_length=12, default="Open", choices=[(x, x) for x in ("Open", "In Progress", "Resolved")])
     created_at = models.DateTimeField(default=timezone.now)
     resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_support_tickets")
 
     class Meta:
         ordering = ["-created_at"]

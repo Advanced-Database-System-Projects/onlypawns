@@ -544,7 +544,8 @@ REPORTS = [("daily", "Daily Transaction Report", "Every transaction in a date ra
 @staff_only(CASHIER)
 def reports(request):
     allowed = REPORTS if request.user.is_admin_role else REPORTS[:1]
-    return render(request, "staff/reports.html", {"reports": allowed, "today": timezone.localdate()})
+    today = timezone.localdate()
+    return render(request, "staff/reports.html", {"reports": allowed, "today": today, "month_start": today.replace(day=1)})
 
 
 @staff_only(CASHIER)
@@ -596,9 +597,16 @@ def support_detail(request, pk):
     form = F.ReplyForm(request.POST or None, initial={"status": "In Progress"})
     if request.method == "POST" and form.is_valid():
         SupportMessage.objects.create(support_ticket=s, sender_user=request.user, message=form.cleaned_data["message"])
+        was_resolved = s.status == "Resolved"
         s.assigned_to = s.assigned_to or request.emp
         s.status = form.cleaned_data["status"] or s.status
-        s.resolved_at = timezone.now() if s.status == "Resolved" else None
+        if s.status == "Resolved":
+            if not was_resolved:  # only stamp the first time it gets resolved
+                s.resolved_at = timezone.now()
+                s.resolved_by = request.emp
+        else:  # reopened, so clear it
+            s.resolved_at = None
+            s.resolved_by = None
         s.save()
         messages.success(request, "Reply sent.")
         return redirect("support_detail", pk=s.pk)
