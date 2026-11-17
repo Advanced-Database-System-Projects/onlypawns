@@ -8,4 +8,39 @@
 <div class="row"><button class="btn">{{ submit }}</button><a class="btn ghost" href="{{ back }}">Cancel</a></div></form>
 {% endblock %}
 {% block head %}{% if form.latitude and form.longitude %}<link rel="stylesheet" href="{% static 'pawn/vendor/leaflet/leaflet.css' %}">{% endif %}{% endblock %}
-{% block scripts %}{% if form.latitude and form.longitude %}<script src="{% static 'pawn/vendor/leaflet/leaflet.js' %}"></script>{% endif %}{% endblock %}
+{% block scripts %}{% if form.latitude and form.longitude %}<script src="{% static 'pawn/vendor/leaflet/leaflet.js' %}"></script>{% endif %}
+{% if form.rate_to_php %}<script>
+(function () {
+  var rate = document.getElementById('id_rate_to_php');
+  var src = document.getElementById('id_code') || document.getElementById('id_currency');
+  if (!rate || !src) return;
+  var row = document.createElement('div');
+  row.className = 'row';
+  row.style.cssText = 'margin-top:8px;gap:10px;align-items:center';
+  var btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'btn ghost'; btn.textContent = 'Get live rate';
+  var msg = document.createElement('span'); msg.className = 'soft';
+  row.appendChild(btn); row.appendChild(msg);
+  rate.parentNode.insertBefore(row, rate.nextSibling);
+
+  function code() {
+    return (src.tagName === 'SELECT' ? src.options[src.selectedIndex].text : src.value).trim().toUpperCase();
+  }
+  function load() {
+    var c = code();
+    if (c.length !== 3) { msg.textContent = ''; return; }
+    msg.textContent = 'Fetching...';
+    fetch('/staff/admin/live-rate/?code=' + encodeURIComponent(c), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { msg.textContent = d.error; return; }
+        rate.value = d.rate;
+        msg.textContent = 'Live: 1 ' + d.code + ' = ' + d.rate + ' PHP';
+      })
+      .catch(function () { msg.textContent = 'Could not reach the rate service.'; });
+  }
+  btn.addEventListener('click', load);
+  src.addEventListener(src.tagName === 'SELECT' ? 'change' : 'blur', function () { if (!rate.value) load(); });
+})();
+</script>{% endif %}
+{% endblock %}

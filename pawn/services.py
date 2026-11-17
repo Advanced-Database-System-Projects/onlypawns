@@ -564,6 +564,69 @@ def escalate_chat(session, customer, subject="Chat from Bot Star"):
                                   message="Handed over from Bot Star. Recent messages:\n" + "\n".join(last))
     return ticket
 
+# ------------------------------------------------------------------ live exchange rates
+RATE_APIS = (
+    ("https://open.er-api.com/v6/latest/{code}",
+     lambda d: d["rates"]["PHP"] if d.get("result") == "success" else None),
+    ("https://api.frankfurter.dev/v1/latest?base={code}&symbols=PHP",
+     lambda d: d["rates"]["PHP"]),
+)
+
+
+def fetch_live_rate(code):
+    """Pesos for 1 unit of `code` from a free, no-key API. Raises PawnError if none respond."""
+    from decimal import Decimal
+    code = (code or "").strip().upper()
+    if code == "PHP":
+        return Decimal("1.000000")
+    for url, pick in RATE_APIS:
+        try:
+            req = urllib.request.Request(url.format(code=urllib.parse.quote(code)),
+                                         headers={"User-Agent": "OnlyPawns/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                value = pick(json.loads(r.read()))
+            if value and Decimal(str(value)) > 0:
+                return Decimal(str(value)).quantize(Decimal("0.000001"))
+        except Exception:
+            continue
+    raise PawnError(f"Couldn't fetch a live rate for {code}. Check the code or enter the rate manually.")
+
+def refresh_rates():
+    """Save today's live rate for every non-PHP currency. Returns (updated, failed) code lists."""
+    from django.utils import timezone
+    from .models import Currency, ExchangeRate
+    updated, failed = [], []
+    for cur in Currency.objects.exclude(code="PHP"):
+        try:
+            rate = fetch_live_rate(cur.code)
+        except PawnError:
+            failed.append(cur.code)
+            continue
+        ExchangeRate.objects.update_or_create(
+            currency=cur, effective_date=timezone.localdate(), defaults={"rate_to_php": rate})
+        updated.append(cur.code)
+    return updated, failed
+
+_RATE_TRIED = {}  # code -> last attempt time, so a failing API isn't hit on every page load
+
+
+def refresh_if_stale(cur, latest):
+    """Returns the newest ExchangeRate for `cur`, fetching a live one first if the saved one is old."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import ExchangeRate
+    now = timezone.now()
+    if latest and now - latest.created_at < timedelta(hours=6):
+        return latest
+    last_try = _RATE_TRIED.get(cur.code)
+    if last_try and now - last_try < timedelta(minutes=30):
+        return latest
+    _RATE_TRIED[cur.code] = now
+    try:
+        rate = fetch_live_rate(cur.code)
+    except PawnError:
+        return latest
+    return ExchangeRate.objects.create(currency=cur, rate_to_php=rate)
 
 # ------------------------------------------------------------------------------ google signin
 def verify_google_token(id_token):

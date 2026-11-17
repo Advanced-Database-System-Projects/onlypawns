@@ -1,6 +1,7 @@
 from datetime import timedelta
 from functools import wraps
 
+
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.core.paginator import Paginator
@@ -11,6 +12,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
+from django.forms import Form
 
 from . import forms as F
 from . import services as S
@@ -717,7 +719,7 @@ class CrudUpdate(CrudFormMixin, UpdateView):
 
 class CrudDelete(CrudBase, DeleteView):
     http_method_names = ["post"]        # deleting is POST only, the confirm dialog is in the list page
-
+    form_class = Form
     def get_success_url(self):
         return reverse(f"{self.key}_list")
 
@@ -768,6 +770,21 @@ EMPLOYEE_SORT = [("last_name", "Name (A to Z)"), ("branch__branch_name", "Branch
                  ("status", "Status")]
 
 
+
+@staff_only(ADMIN)
+def live_rate(request):
+    from django.http import JsonResponse
+    code = request.GET.get("code", "").strip().upper()
+    if len(code) != 3 or not code.isalpha():
+        return JsonResponse({"error": "Enter a 3-letter currency code."}, status=400)
+    if code == "PHP":
+        return JsonResponse({"code": code, "rate": "1.000000"})
+    try:
+        rate = S.fetch_live_rate(code)
+    except S.PawnError as e:
+        return JsonResponse({"error": str(e)}, status=502)
+    return JsonResponse({"code": code, "rate": str(rate)})
+
 @staff_only(ADMIN)
 def employees(request):
     qs = Employee.objects.select_related("user", "user__role", "branch")
@@ -811,8 +828,13 @@ def audit_log(request):
 def backups(request):
     if request.method == "POST":
         from django.core.management import call_command
-        call_command("backup")
-        messages.success(request, "Backup finished.")
+        import io
+        err = io.StringIO()
+        call_command("backup", stderr=err)
+        if err.getvalue():
+            messages.error(request, err.getvalue().strip())
+        else:
+            messages.success(request, "Backup finished.")
         return redirect("backups")
     rows = [{"cells": [f"{timezone.localtime(b.run_at):%b %d, %Y %I:%M %p}", b.file_path, f"{b.size_mb} MB", b.status], "badge": 3}
             for b in BackupLog.objects.all()[:30]]

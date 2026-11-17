@@ -193,7 +193,9 @@ class Currency(models.Model):
     def rate(self):
         if self.code == "PHP":
             return Decimal("1")
+        from . import services as S
         r = self.rates.order_by("-effective_date", "-id").first()
+        r = S.refresh_if_stale(self, r)
         return r.rate_to_php if r else Decimal("1")
 
 

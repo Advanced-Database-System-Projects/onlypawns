@@ -30,7 +30,7 @@ class Command(BaseCommand):
                 else:
                     from django.core.management import call_command
                     dump = Path(tmp) / "dump.json"
-                    with open(dump, "w") as fh:
+                    with open(dump, "w", encoding="utf-8") as fh:
                         call_command("dumpdata", "--natural-foreign", stdout=fh)
                     z.write(dump, "dump.json")
                 for folder in (settings.MEDIA_ROOT, settings.PRIVATE_ROOT):

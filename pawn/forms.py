@@ -251,15 +251,56 @@ class CategoryForm(StyledModelForm):
 
 
 class CurrencyForm(StyledModelForm):
+    rate_to_php = forms.DecimalField(
+        max_digits=12, decimal_places=6, required=False, min_value=0, label="Rate to PHP",
+        help_text="Pesos for 1 unit of this currency. Leave blank to fetch the live rate.")
+
     class Meta:
         model = Currency
         fields = ["code", "name", "symbol"]
+
+    def clean_code(self):
+        return self.cleaned_data["code"].upper()
+
+    def clean(self):
+        d = super().clean()
+        code = d.get("code")
+        if code and code != "PHP" and not d.get("rate_to_php") and not self.instance.pk:
+            from . import services as S
+            try:
+                d["rate_to_php"] = S.fetch_live_rate(code)
+            except S.PawnError as e:
+                self.add_error("rate_to_php", str(e))
+        return d
+
+    def save(self, commit=True):
+        cur = super().save(commit)
+        rate = self.cleaned_data.get("rate_to_php")
+        if commit and rate and cur.code != "PHP":
+            ExchangeRate.objects.create(currency=cur, rate_to_php=rate)
+        return cur
 
 
 class RateForm(StyledModelForm):
     class Meta:
         model = ExchangeRate
         fields = ["currency", "rate_to_php", "effective_date"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rate_to_php"].required = False
+        self.fields["rate_to_php"].help_text = "Leave blank to fetch the live rate."
+
+    def clean(self):
+        d = super().clean()
+        cur = d.get("currency")
+        if cur and not d.get("rate_to_php"):
+            from . import services as S
+            try:
+                d["rate_to_php"] = S.fetch_live_rate(cur.code)
+            except S.PawnError as e:
+                self.add_error("rate_to_php", str(e))
+        return d
 
 
 class IDTypeForm(StyledModelForm):
