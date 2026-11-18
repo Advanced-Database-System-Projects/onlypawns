@@ -177,48 +177,71 @@ def _qr_drawing(data, size=84):
     d.add(widget)
     return d
 
-
 def issue_receipt(txn, rtype, title, lines, footer=""):
+    from pathlib import Path
     from reportlab.graphics import renderPDF
     from reportlab.lib.pagesizes import A5
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas
+
+    BLUE, SOFT_BLUE, GOLD = (0, 0.341, 0.906), (0.91, 0.941, 1), (0.961, 0.702, 0.004)
+    INK, MUTED, RULE = (0.07, 0.09, 0.16), (0.38, 0.42, 0.52), (0.835, 0.878, 0.953)
 
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A5)
     w, h = A5
-    c.setFillColorRGB(0.04, 0.04, 0.06)
-    c.rect(0, h - 70, w, 70, fill=1, stroke=0)
-    c.setFillColorRGB(1, 0.18, 0.59)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(28, h - 38, "ONLY PAWNS")
+    c.setFillColorRGB(*BLUE)
+    c.rect(0, h - 78, w, 78, fill=1, stroke=0)
+    c.setFillColorRGB(*GOLD)
+    c.rect(0, h - 82, w, 4, fill=1, stroke=0)
+    try:
+        logo = Path(__file__).resolve().parent / "static" / "pawn" / "icons" / "logo-badge.png"
+        c.drawImage(ImageReader(str(logo)), 24, h - 64, width=46, height=46, mask="auto")
+    except Exception:
+        pass
     c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica", 10)
-    c.drawString(28, h - 54, f"{txn.branch.branch_name}  |  {txn.branch.contact_no}")
-    c.setFillColorRGB(0.1, 0.1, 0.1)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(28, h - 100, title)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(80, h - 36, "ONLY PAWNS")
+    c.setFillColorRGB(0.86, 0.91, 1)
+    c.setFont("Helvetica", 9.5)
+    c.drawString(80, h - 54, f"{txn.branch.branch_name}  |  {txn.branch.contact_no}")
+    c.setFillColorRGB(*BLUE)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(28, h - 112, title)
+    c.setFillColorRGB(*MUTED)
     c.setFont("Helvetica", 9)
-    c.drawString(28, h - 114, f"Transaction No. {txn.transaction_no}")
-    c.drawRightString(w - 28, h - 114, timezone.localtime(txn.created_at).strftime("%b %d, %Y %I:%M %p"))
-    y = h - 142
-    for label, value in lines:
+    c.drawString(28, h - 128, f"Transaction No. {txn.transaction_no}")
+    c.drawRightString(w - 28, h - 128, timezone.localtime(txn.created_at).strftime("%b %d, %Y %I:%M %p"))
+    c.setStrokeColorRGB(*RULE)
+    c.line(28, h - 136, w - 28, h - 136)
+    y = h - 158
+    for i, (label, value) in enumerate(lines):
+        if i % 2 == 0:
+            c.setFillColorRGB(*SOFT_BLUE)
+            c.rect(22, y - 5, w - 44, 17, fill=1, stroke=0)
         c.setFont("Helvetica", 9.5)
-        c.setFillColorRGB(0.4, 0.4, 0.4)
+        c.setFillColorRGB(*MUTED)
         c.drawString(28, y, str(label))
-        c.setFillColorRGB(0.05, 0.05, 0.05)
+        c.setFillColorRGB(*INK)
         c.setFont("Helvetica-Bold", 9.5)
         c.drawRightString(w - 28, y, str(value)[:60])
-        y -= 16
+        y -= 17
     y -= 6
     renderPDF.draw(_qr_drawing(txn.qr_token), c, 28, max(y - 84, 60))
     c.setFont("Helvetica", 7.5)
-    c.setFillColorRGB(0.4, 0.4, 0.4)
+    c.setFillColorRGB(*MUTED)
     c.drawString(130, max(y - 84, 60) + 40, "Scan this code at the counter to pull up this transaction.")
     if txn.employee:
         c.drawString(130, max(y - 84, 60) + 28, f"Handled by {txn.employee.full_name}")
     if footer:
         c.drawString(28, 40, footer[:110])
+    c.setFillColorRGB(*BLUE)
+    c.setFont("Helvetica-Bold", 7.5)
+    c.drawCentredString(w / 2, 18, "Only Pawns  |  Palawan Pawn Star")
+    c.setFillColorRGB(*GOLD)
+    c.rect(0, 0, w, 6, fill=1, stroke=0)
     c.save()
+
     receipt_no = f"R-{txn.transaction_no[4:]}"
     receipt = Receipt(transaction=txn, receipt_no=receipt_no, receipt_type=rtype)
     receipt.file.save(f"{receipt_no}.pdf", ContentFile(buf.getvalue()), save=False)
@@ -716,7 +739,7 @@ def report_pdf(rep):
     data = [rep["headers"]] + (rep["rows"] or [["No records"] + [""] * (len(rep["headers"]) - 1)])
     tbl = Table(data, repeatRows=1)
     tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#14141C")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0057E7")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTSIZE", (0, 0), (-1, -1), 8), ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#BBBBBB")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F2F5")])]))
     parts += [tbl, Spacer(1, 10)] + [Paragraph(s, st["Normal"]) for s in rep["summary"]]
