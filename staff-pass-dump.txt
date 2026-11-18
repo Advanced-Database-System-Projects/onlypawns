@@ -1,0 +1,306 @@
+﻿
+  pawn\views_staff.py:23:)
+  pawn\views_staff.py:24:
+> pawn\views_staff.py:25:ADMIN, CASHIER, APPRAISER = Role.ADMIN, Role.CASHIER, Role.APPRAISER
+  pawn\views_staff.py:26:
+  pawn\views_staff.py:27:
+  pawn\views_staff.py:28:# 
+------------------------------------------------------------------------------- plumbing
+> pawn\views_staff.py:29:def staff_only(*roles):
+  pawn\views_staff.py:30:    """Employees only. Administrators pass every role check."""
+  pawn\views_staff.py:31:    def deco(view):
+  pawn\views_staff.py:32:        @wraps(view)
+  pawn\views_staff.py:33:        def inner(request, *a, **kw):
+  pawn\views_staff.py:34:            u = request.user
+  pawn\views_staff.py:35:            if not u.is_authenticated or not u.is_staff_user or not hasattr(u, 
+"employee"):
+  pawn\views_staff.py:36:                return redirect(f"/staff/login/?next={request.path}")
+  pawn\views_staff.py:37:            if roles and not u.is_admin_role and u.role_name not in roles:
+  pawn\views_staff.py:38:                messages.error(request, "Your role does not have access to 
+that page.")
+  pawn\views_staff.py:39:                return redirect("staff_dashboard")
+  pawn\views_staff.py:40:            request.emp = u.employee
+  pawn\views_staff.py:41:            return view(request, *a, **kw)
+  pawn\views_staff.py:42:        return inner
+  pawn\views_staff.py:43:    return deco
+  pawn\views_staff.py:44:
+  pawn\views_staff.py:45:
+  pawn\views_staff.py:46:def paginate(request, qs, per=20):
+  pawn\views_staff.py:47:    if hasattr(qs, "ordered") and not qs.ordered:
+  pawn\views_staff.py:48:        qs = qs.order_by("pk")          # stable pages even when the model has 
+no default ordering
+  pawn\views_staff.py:49:    page = Paginator(qs, per).get_page(request.GET.get("page"))
+  pawn\views_staff.py:50:    params = request.GET.copy()
+  pawn\views_staff.py:51:    params.pop("page", None)
+  pawn\views_staff.py:79:
+  pawn\views_staff.py:80:
+> pawn\views_staff.py:81:def form_page(request, title, form, back, multipart=False, submit="Save", 
+note=""):
+  pawn\views_staff.py:82:    return render(request, "staff/form.html", {"title": title, "form": form, 
+"back": back,
+  pawn\views_staff.py:83:                                               "multipart": multipart, 
+"submit": submit, "note": note})
+  pawn\views_staff.py:84:
+  pawn\views_staff.py:85:
+  pawn\views_staff.py:86:def P(v):
+  pawn\views_staff.py:87:    return f"₱{S.peso(v)}"
+  pawn\views_staff.py:88:
+  pawn\views_staff.py:89:
+  pawn\views_staff.py:90:def fail(request, err):
+  pawn\views_staff.py:91:    messages.error(request, str(err))
+  pawn\views_staff.py:92:
+  pawn\views_staff.py:93:
+  pawn\views_staff.py:94:# 
+------------------------------------------------------------------------------- login
+> pawn\views_staff.py:95:def staff_login(request):
+  pawn\views_staff.py:96:    if request.user.is_authenticated and request.user.is_staff_user:
+  pawn\views_staff.py:97:        return redirect("staff_dashboard")
+  pawn\views_staff.py:98:    error = ""
+  pawn\views_staff.py:99:    if request.method == "POST":
+  pawn\views_staff.py:100:        name, pw = request.POST.get("username", "").strip(), 
+request.POST.get("password", "")
+  pawn\views_staff.py:101:        user = 
+User.objects.filter(username=name).select_related("role").first()
+  pawn\views_staff.py:102:        if user and user.is_locked():
+  pawn\views_staff.py:103:            error = "Too many wrong passwords. Try again in a few minutes."
+  pawn\views_staff.py:104:        else:
+  pawn\views_staff.py:105:            auth = authenticate(request, username=name, password=pw)
+  pawn\views_staff.py:106:            if auth and auth.is_staff_user and auth.is_active:
+  pawn\views_staff.py:107:                auth.failed_pin_attempts, auth.locked_until, 
+auth.last_login_at = 0, None, timezone.now()
+  pawn\views_staff.py:108:                auth.save(update_fields=["failed_pin_attempts", 
+"locked_until", "last_login_at"])
+  pawn\views_staff.py:109:                login(request, auth)
+  pawn\views_staff.py:110:                S.audit(auth, "LOGIN", "users", auth.pk)
+  pawn\views_staff.py:111:                nxt = request.GET.get("next", "")
+  pawn\views_staff.py:112:                return redirect(nxt if nxt.startswith("/staff/") else 
+"staff_dashboard")
+  pawn\views_staff.py:113:            if user and user.is_staff_user:
+  pawn\views_staff.py:114:                user.failed_pin_attempts += 1
+  pawn\views_staff.py:115:                if user.failed_pin_attempts >= 5:
+  pawn\views_staff.py:116:                    user.locked_until = timezone.now() + timedelta(minutes=15)
+  pawn\views_staff.py:117:                    user.failed_pin_attempts = 0
+  pawn\views_staff.py:128:# --------------------------------------------------------------------------- 
+dashboard
+  pawn\views_staff.py:129:@staff_only()
+> pawn\views_staff.py:130:def dashboard(request):
+  pawn\views_staff.py:131:    today = timezone.localdate()
+  pawn\views_staff.py:132:    open_t = 
+PawnTicket.objects.filter(status__in=PawnTicket.OPEN).select_related("customer", "item")
+  pawn\views_staff.py:133:    soon = open_t.filter(maturity_date__lte=today + 
+timedelta(days=7)).order_by("maturity_date")
+  pawn\views_staff.py:134:    led = CashLedger.objects.filter(recorded_at__date=today)
+  pawn\views_staff.py:135:    if not request.user.is_admin_role:
+  pawn\views_staff.py:136:        led = led.filter(branch=request.emp.branch)
+  pawn\views_staff.py:137:    ctx = {
+  pawn\views_staff.py:138:        "open_count": open_t.count(), "principal": 
+open_t.aggregate(s=Sum("loan_amount"))["s"] or 0,
+  pawn\views_staff.py:139:        "soon": [(t, S.compute_due(t)) for t in soon[:12]],
+  pawn\views_staff.py:140:        "cash_in": led.filter(direction="IN").aggregate(s=Sum("amount"))["s"] 
+or 0,
+  pawn\views_staff.py:141:        "cash_out": 
+led.filter(direction="OUT").aggregate(s=Sum("amount"))["s"] or 0,
+  pawn\views_staff.py:142:        "pending": Customer.objects.filter(status="Pending 
+Verification").count(),
+  pawn\views_staff.py:143:        "support_open": 
+SupportTicket.objects.exclude(status="Resolved").count(),
+  pawn\views_staff.py:144:        "for_auction": PawnTicket.objects.filter(status="Expired").count(),
+  pawn\views_staff.py:145:        "recent": Transaction.objects.select_related("customer", 
+"transaction_type").order_by("-created_at")[:8],
+  pawn\views_staff.py:146:        "pending_appraisals": 
+Appraisal.objects.filter(result="Pending").count(),
+  pawn\views_staff.py:147:        # real totals for the "this year" cards
+  pawn\views_staff.py:148:        "customers_total": Customer.objects.count(),
+  pawn\views_staff.py:149:        "customers_this_year": 
+Customer.objects.filter(registered_at__year=today.year).count(),
+  pawn\views_staff.py:150:        "tickets_this_year": 
+PawnTicket.objects.filter(loan_date__year=today.year).count(),
+  pawn\views_staff.py:151:        "branch_count": Branch.objects.filter(status="Active").count(),
+  pawn\views_staff.py:152:        "category_count": ItemCategory.objects.count(),
+
+
+
+
+> pawn\forms.py:29:class StyledMixin:
+  pawn\forms.py:30:    """Adds the css classes and date pickers once so every form looks the same."""
+  pawn\forms.py:31:
+  pawn\forms.py:32:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:33:        super().__init__(*args, **kwargs)
+  pawn\forms.py:34:        for f in self.fields.values():
+  pawn\forms.py:35:            w = f.widget
+  pawn\forms.py:36:            if isinstance(w, (forms.CheckboxInput, forms.RadioSelect)):
+  pawn\forms.py:37:                continue
+  pawn\forms.py:38:            w.attrs.setdefault("class", "in")
+  pawn\forms.py:39:            if isinstance(w, forms.DateInput):
+  pawn\forms.py:40:                w.input_type = "date"
+  pawn\forms.py:41:                w.format = "%Y-%m-%d"
+  pawn\forms.py:42:            if isinstance(f, forms.DateField):
+  pawn\forms.py:43:                f.widget = forms.DateInput(attrs={"class": "in", "type": "date"}, 
+format="%Y-%m-%d")
+  pawn\forms.py:44:
+  pawn\forms.py:45:
+> pawn\forms.py:46:class Styled(StyledMixin, forms.Form):
+  pawn\forms.py:47:    pass
+  pawn\forms.py:48:
+  pawn\forms.py:49:
+> pawn\forms.py:50:class StyledModelForm(StyledMixin, forms.ModelForm):
+  pawn\forms.py:51:    pass
+  pawn\forms.py:52:
+  pawn\forms.py:53:
+  pawn\forms.py:54:class MultipleFileInput(forms.ClearableFileInput):
+  pawn\forms.py:55:    allow_multiple_selected = True
+  pawn\forms.py:56:
+  pawn\forms.py:57:
+  pawn\forms.py:58:class MultipleFileField(forms.FileField):
+  pawn\forms.py:59:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:60:        kwargs.setdefault("widget", MultipleFileInput(attrs={"accept": "image/*"}))
+  pawn\forms.py:61:        super().__init__(*args, **kwargs)
+  pawn\forms.py:62:
+  pawn\forms.py:63:    def clean(self, data, initial=None):
+  pawn\forms.py:64:        single = super().clean
+  pawn\forms.py:65:        if isinstance(data, (list, tuple)):
+  pawn\forms.py:66:            return [single(d, initial) for d in data if d]
+  pawn\forms.py:67:        return [single(data, initial)] if data else []
+  pawn\forms.py:68:
+  pawn\forms.py:69:
+  pawn\forms.py:70:def store_private(upload):
+
+
+
+
+> pawn\forms.py:115:    def save(self, commit=True):
+  pawn\forms.py:116:        customer = super().save()
+  pawn\forms.py:117:        d = self.cleaned_data
+  pawn\forms.py:118:        cid = CustomerID(customer=customer, id_type=d["id_type"], 
+id_number_enc=services.encrypt_text(d["id_number"]),
+  pawn\forms.py:119:                         id_hash=services.id_hash(d["id_type"].pk, d["id_number"]), 
+expiry_date=d.get("id_expiry"))
+  pawn\forms.py:120:        cid.front_image.save("front.enc", store_private(d["id_front"]), save=False)
+  pawn\forms.py:121:        if d.get("id_back"):
+  pawn\forms.py:122:            cid.back_image.save("back.enc", store_private(d["id_back"]), save=False)
+  pawn\forms.py:123:        if d.get("id_selfie"):
+  pawn\forms.py:124:            cid.selfie_image.save("selfie.enc", store_private(d["id_selfie"]), 
+save=False)
+  pawn\forms.py:125:        cid.save()
+  pawn\forms.py:126:        return customer
+  pawn\forms.py:127:
+  pawn\forms.py:128:
+  pawn\forms.py:129:class CustomerEditForm(StyledModelForm):
+  pawn\forms.py:130:    class Meta:
+  pawn\forms.py:131:        model = Customer
+  pawn\forms.py:132:        fields = ["first_name", "middle_name", "last_name", "birthdate", "sex", 
+"civil_status", "nationality",
+  pawn\forms.py:133:                  "address", "mobile_no", "email", "source_of_income"]
+  pawn\forms.py:134:
+  pawn\forms.py:135:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:136:        super().__init__(*args, **kwargs)
+  pawn\forms.py:137:        self.fields["birthdate"].widget = forms.DateInput(attrs={"class": "in", 
+"type": "date"}, format="%Y-%m-%d")
+  pawn\forms.py:138:
+  pawn\forms.py:139:    def clean_mobile_no(self):
+  pawn\forms.py:140:        m = normalize_mobile(self.cleaned_data["mobile_no"])
+> pawn\forms.py:276:    def save(self, commit=True):
+  pawn\forms.py:277:        cur = super().save(commit)
+  pawn\forms.py:278:        rate = self.cleaned_data.get("rate_to_php")
+  pawn\forms.py:279:        if commit and rate and cur.code != "PHP":
+  pawn\forms.py:280:            ExchangeRate.objects.create(currency=cur, rate_to_php=rate)
+  pawn\forms.py:281:        return cur
+  pawn\forms.py:282:
+  pawn\forms.py:283:
+  pawn\forms.py:284:class RateForm(StyledModelForm):
+  pawn\forms.py:285:    class Meta:
+  pawn\forms.py:286:        model = ExchangeRate
+  pawn\forms.py:287:        fields = ["currency", "rate_to_php", "effective_date"]
+  pawn\forms.py:288:
+  pawn\forms.py:289:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:290:        super().__init__(*args, **kwargs)
+  pawn\forms.py:291:        self.fields["rate_to_php"].required = False
+  pawn\forms.py:292:        self.fields["rate_to_php"].help_text = "Leave blank to fetch the live rate."
+  pawn\forms.py:293:
+  pawn\forms.py:294:    def clean(self):
+  pawn\forms.py:295:        d = super().clean()
+  pawn\forms.py:296:        cur = d.get("currency")
+  pawn\forms.py:297:        if cur and not d.get("rate_to_php"):
+  pawn\forms.py:298:            from . import services as S
+  pawn\forms.py:299:            try:
+  pawn\forms.py:300:                d["rate_to_php"] = S.fetch_live_rate(cur.code)
+  pawn\forms.py:301:            except S.PawnError as e:
+> pawn\forms.py:356:    def save(self):
+  pawn\forms.py:357:        d = self.cleaned_data
+  pawn\forms.py:358:        if self.instance:
+  pawn\forms.py:359:            emp, user = self.instance, self.instance.user
+  pawn\forms.py:360:        else:
+  pawn\forms.py:361:            user, emp = User(), Employee()
+  pawn\forms.py:362:        user.username, user.role = d["username"], d["role"]
+  pawn\forms.py:363:        user.first_name, user.last_name = d["first_name"], d["last_name"]
+  pawn\forms.py:364:        user.is_active = d["status"] == "Active"
+  pawn\forms.py:365:        user.is_staff = d["role"].role_name == Role.ADMIN
+  pawn\forms.py:366:        user.status = "Active" if user.is_active else "Inactive"
+  pawn\forms.py:367:        if d["password"]:
+  pawn\forms.py:368:            user.set_password(d["password"])
+  pawn\forms.py:369:        user.save()
+  pawn\forms.py:370:        emp.user, emp.branch = user, d["branch"]
+  pawn\forms.py:371:        for f in ("first_name", "last_name", "position", "contact_no", 
+"date_hired", "status"):
+  pawn\forms.py:372:            setattr(emp, f, d[f])
+  pawn\forms.py:373:        emp.save()
+  pawn\forms.py:374:        return emp
+  pawn\forms.py:375:
+  pawn\forms.py:376:
+  pawn\forms.py:377:class ReplyForm(Styled):
+  pawn\forms.py:378:    message = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))
+  pawn\forms.py:379:    status = forms.ChoiceField(choices=[("Open", "Open"), ("In Progress", "In 
+Progress"), ("Resolved", "Resolved")], required=False)
+  pawn\forms.py:380:
+  pawn\forms.py:381:
+
+
+
+{% extends "staff/base.html" %}{% load static %}
+{% block content %}
+<h1>{{ title }}</h1>
+<form method="post" class="card flat" style="max-width:640px" {% if multipart %}enctype="multipart/form-data"{% endif %}>{% csrf_token %}
+{% if note %}<p class="soft">{{ note }}</p>{% endif %}
+{% include "staff/_fields.html" %}
+{% if form.latitude and form.longitude %}<div class="field"><label for="pick-search">Pick the branch on the map</label><div class="mapbar" style="margin-bottom:8px"><div style="display:flex;gap:8px;flex:1;position:relative"><input class="in" id="pick-search" type="search" placeholder="Search a place, then drag the pin" autocomplete="off"><ul class="suggest card" id="pick-suggest" hidden></ul></div></div><div id="pick-map" class="pick-map" style="height:280px"></div><div class="help">Click the map or drag the pin. Latitude and longitude above update by themselves.</div></div>{% endif %}
+<div class="row"><button class="btn">{{ submit }}</button><a class="btn ghost" href="{{ back }}">Cancel</a></div></form>
+{% endblock %}
+{% block head %}{% if form.latitude and form.longitude %}<link rel="stylesheet" href="{% static 'pawn/vendor/leaflet/leaflet.css' %}">{% endif %}{% endblock %}
+{% block scripts %}{% if form.latitude and form.longitude %}<script src="{% static 'pawn/vendor/leaflet/leaflet.js' %}"></script>{% endif %}
+{% if form.rate_to_php %}<script>
+(function () {
+  var rate = document.getElementById('id_rate_to_php');
+  var src = document.getElementById('id_code') || document.getElementById('id_currency');
+  if (!rate || !src) return;
+  var row = document.createElement('div');
+  row.className = 'row';
+  row.style.cssText = 'margin-top:8px;gap:10px;align-items:center';
+  var btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'btn ghost'; btn.textContent = 'Get live rate';
+  var msg = document.createElement('span'); msg.className = 'soft';
+  row.appendChild(btn); row.appendChild(msg);
+  rate.parentNode.insertBefore(row, rate.nextSibling);
+
+  function code() {
+    return (src.tagName === 'SELECT' ? src.options[src.selectedIndex].text : src.value).trim().toUpperCase();
+  }
+  function load() {
+    var c = code();
+    if (c.length !== 3) { msg.textContent = ''; return; }
+    msg.textContent = 'Fetching...';
+    fetch('/staff/admin/live-rate/?code=' + encodeURIComponent(c), { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { msg.textContent = d.error; return; }
+        rate.value = d.rate;
+        msg.textContent = 'Live: 1 ' + d.code + ' = ' + d.rate + ' PHP';
+      })
+      .catch(function () { msg.textContent = 'Could not reach the rate service.'; });
+  }
+  btn.addEventListener('click', load);
+  src.addEventListener(src.tagName === 'SELECT' ? 'change' : 'blur', function () { if (!rate.value) load(); });
+})();
+</script>{% endif %}
+{% endblock %}
+
+

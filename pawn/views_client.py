@@ -304,7 +304,32 @@ def support_detail(request, pk):
 def profile(request):
     c = request.cust
     return render(request, "app/profile.html", {"c": c, "currencies": Currency.objects.all(), "cur": request.session.get("cur", "PHP")})
-
+@client_only
+def change_pin(request):
+    error, done = "", False
+    if request.method == "POST":
+        user = request.user
+        old = request.POST.get("old", "")
+        new, new2 = request.POST.get("pin", ""), request.POST.get("pin2", "")
+        if user.is_locked():
+            error = "Too many wrong tries. Please try again later."
+        elif not check_password(old, user.pin_hash):
+            user.failed_pin_attempts += 1
+            if user.failed_pin_attempts >= 5:
+                user.locked_until = timezone.now() + timezone.timedelta(minutes=15)
+            user.save(update_fields=["failed_pin_attempts", "locked_until"])
+            error = "Your current PIN is wrong."
+        elif valid_pin(new, new2):
+            error = valid_pin(new, new2)
+        elif new == old:
+            error = "Your new PIN must be different from the old one."
+        else:
+            user.pin_hash = make_password(new)
+            user.failed_pin_attempts, user.locked_until = 0, None
+            user.save(update_fields=["pin_hash", "failed_pin_attempts", "locked_until"])
+            S.audit(user, "UPDATE", "users", user.pk, None, {"pin": "changed"})
+            done = True
+    return render(request, "app/change_pin.html", {"error": error, "done": done})
 
 @client_only
 @require_POST

@@ -1,9 +1,7 @@
 from datetime import timedelta
 from functools import wraps
-
-
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.core.paginator import Paginator
 from django.db.models import Count, ProtectedError, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse
@@ -119,6 +117,16 @@ def staff_login(request):
             error = "That username and password don't match."
     return render(request, "staff/login.html", {"error": error})
 
+@staff_only()
+def change_password(request):
+    form = F.StaffPasswordForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        update_session_auth_hash(request, request.user)
+        S.audit(request.user, "UPDATE", "users", request.user.pk, None, {"password": "changed"})
+        messages.success(request, "Your password was changed.")
+        return redirect("staff_dashboard")
+    return form_page(request, "Change my password", form, "/staff/", submit="Change password")
 
 def staff_logout(request):
     logout(request)

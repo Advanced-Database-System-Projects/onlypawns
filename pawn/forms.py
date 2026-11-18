@@ -345,6 +345,9 @@ class EmployeeForm(Styled):
         p = self.cleaned_data["password"]
         if not self.instance and len(p) < 8:
             raise forms.ValidationError("Set a password with at least 8 characters.")
+        if p:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(p)
         if p and len(p) < 8:
             raise forms.ValidationError("Use at least 8 characters.")
         return p
@@ -369,7 +372,41 @@ class EmployeeForm(Styled):
             setattr(emp, f, d[f])
         emp.save()
         return emp
+class StaffPasswordForm(Styled):
+    old = forms.CharField(label="Current password", widget=forms.PasswordInput(render_value=False))
+    new = forms.CharField(label="New password", widget=forms.PasswordInput(render_value=False),
+                          help_text="At least 8 characters.")
+    new2 = forms.CharField(label="Type the new password again", widget=forms.PasswordInput(render_value=False))
 
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_old(self):
+        if not self.user.check_password(self.cleaned_data["old"]):
+            raise forms.ValidationError("Your current password is wrong.")
+        return self.cleaned_data["old"]
+
+    def clean(self):
+        d = super().clean()
+        new, new2, old = d.get("new"), d.get("new2"), d.get("old")
+        if new and new2 and new != new2:
+            self.add_error("new2", "The two passwords don't match.")
+        elif new and old and new == old:
+            self.add_error("new", "Your new password must be different from the old one.")
+        elif new:
+            from django.contrib.auth.password_validation import validate_password
+            try:
+                validate_password(new, self.user)
+            except forms.ValidationError as e:
+                self.add_error("new", e)
+        return d
+
+    def save(self):
+        self.user.set_password(self.cleaned_data["new"])
+        self.user.failed_pin_attempts, self.user.locked_until = 0, None
+        self.user.save()
+        return self.user
 
 class ReplyForm(Styled):
     message = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))

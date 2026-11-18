@@ -1,0 +1,1030 @@
+﻿=== urls.py: auth ===
+
+pawn\urls.py:10:router.register("customers", api.CustomerViewSet, basename="api-customers")
+pawn\urls.py:11:router.register("tickets", api.TicketViewSet, basename="api-tickets")
+pawn\urls.py:12:router.register("transactions", api.TransactionViewSet, basename="api-transactions")
+pawn\urls.py:13:router.register("branches", api.BranchViewSet, basename="api-branches")
+pawn\urls.py:14:router.register("categories", api.CategoryViewSet, basename="api-categories")
+pawn\urls.py:32:    path("login/", V.staff_login, name="staff_login"),
+pawn\urls.py:33:    path("logout/", V.staff_logout, name="staff_logout"),
+pawn\urls.py:72:for key, (lst, new, edit, delete) in V.CRUDS.items():
+pawn\urls.py:74:        path(f"admin/{key}/", lst, name=f"{key}_list"),
+pawn\urls.py:75:        path(f"admin/{key}/new/", new, name=f"{key}_new"),
+pawn\urls.py:76:        path(f"admin/{key}/<int:pk>/edit/", edit, name=f"{key}_edit"),
+pawn\urls.py:77:        path(f"admin/{key}/<int:pk>/delete/", delete, name=f"{key}_delete"),
+pawn\urls.py:83:    path("register/", C.register, name="client_register"),
+pawn\urls.py:84:    path("signup/", C.signup, name="client_signup"),
+pawn\urls.py:85:    path("key/", C.recovery_key_page, name="client_key"),
+pawn\urls.py:86:    path("login/", C.client_login, name="client_login"),
+pawn\urls.py:87:    path("recover/", C.recover, name="client_recover"),
+pawn\urls.py:88:    path("logout/", C.client_logout, name="client_logout"),
+pawn\urls.py:98:    path("profile/", C.profile, name="client_profile"),
+
+
+
+=== views_client.py: auth views ===
+
+  pawn\views_client.py:30:
+  pawn\views_client.py:31:
+> pawn\views_client.py:32:def new_recovery_key(user):
+  pawn\views_client.py:33:    key = "-".join("".join(secrets.choice(KEY_CHARS) for _ in range(4)) for _ 
+in range(5))
+  pawn\views_client.py:34:    RecoveryKey.objects.create(user=user, key_hash=make_password(key))
+  pawn\views_client.py:35:    return key
+  pawn\views_client.py:36:
+  pawn\views_client.py:37:
+> pawn\views_client.py:38:def google_identity(request):
+  pawn\views_client.py:39:    """Real Google token when a client id is configured, plain email for the 
+classroom demo otherwise."""
+  pawn\views_client.py:40:    if settings.GOOGLE_CLIENT_ID:
+  pawn\views_client.py:41:        return S.verify_google_token(request.POST.get("credential", ""))
+  pawn\views_client.py:42:    email = request.POST.get("email", "").strip().lower()
+  pawn\views_client.py:43:    return {"email": email, "sub": f"demo:{email}", "name": ""} if "@" in 
+email else None
+  pawn\views_client.py:44:
+  pawn\views_client.py:45:
+> pawn\views_client.py:46:def valid_pin(pin, confirm=None):
+  pawn\views_client.py:47:    if not (pin.isdigit() and len(pin) == 6):
+  pawn\views_client.py:48:        return "Your PIN must be exactly 6 digits."
+  pawn\views_client.py:49:    if confirm is not None and pin != confirm:
+  pawn\views_client.py:50:        return "The two PINs don't match."
+  pawn\views_client.py:51:    return ""
+  pawn\views_client.py:52:
+  pawn\views_client.py:53:
+  pawn\views_client.py:54:# --------------------------------------------------------------------------- 
+sign up / in
+  pawn\views_client.py:55:def welcome(request):
+  pawn\views_client.py:56:    if request.user.is_authenticated and request.user.is_client:
+  pawn\views_client.py:57:        return redirect("client_home")
+  pawn\views_client.py:58:    return render(request, "app/welcome.html")
+  pawn\views_client.py:59:
+  pawn\views_client.py:60:
+> pawn\views_client.py:61:def register(request):
+  pawn\views_client.py:62:    form = F.RegistrationForm(request.POST or None, request.FILES or None)
+  pawn\views_client.py:63:    if request.method == "POST" and form.is_valid():
+  pawn\views_client.py:64:        c = form.save()
+  pawn\views_client.py:65:        S.audit(None, "CREATE", "customers", c.pk, None, {"code": c.code, 
+"source": "app"})
+  pawn\views_client.py:66:        request.session["signup_customer"] = c.pk
+  pawn\views_client.py:67:        return redirect("client_signup")
+  pawn\views_client.py:68:    return render(request, "app/register.html", {"form": form})
+  pawn\views_client.py:69:
+  pawn\views_client.py:70:
+> pawn\views_client.py:71:def signup(request):
+  pawn\views_client.py:72:    cust = Customer.objects.filter(pk=request.session.get("signup_customer"), 
+user__isnull=True).first()
+  pawn\views_client.py:73:    error = ""
+  pawn\views_client.py:74:    if request.method == "POST":
+  pawn\views_client.py:75:        if not cust:
+  pawn\views_client.py:76:            cust = 
+Customer.objects.filter(code__iexact=request.POST.get("code", "").strip(), user__isnull=True,
+  pawn\views_client.py:77:                                           
+mobile_no=request.POST.get("mobile", "").strip()).first()
+  pawn\views_client.py:78:        ident, pin = google_identity(request), request.POST.get("pin", "")
+  pawn\views_client.py:79:        error = valid_pin(pin, request.POST.get("pin2", ""))
+  pawn\views_client.py:80:        if not cust:
+  pawn\views_client.py:81:            error = error or "We couldn't find a registration with that 
+customer ID and mobile number."
+  pawn\views_client.py:82:        elif not ident:
+  pawn\views_client.py:83:            error = error or "Google sign-in didn't go through. Try again."
+  pawn\views_client.py:84:        elif User.objects.filter(email=ident["email"]).exists():
+  pawn\views_client.py:85:            error = error or "That Google account is already linked to a 
+customer."
+  pawn\views_client.py:86:        if not error:
+  pawn\views_client.py:87:            role = Role.objects.get(role_name=Role.CLIENT)
+  pawn\views_client.py:88:            user = User(username=cust.code, email=ident["email"], 
+google_id=ident["sub"], role=role,
+  pawn\views_client.py:89:                        pin_hash=make_password(pin), 
+first_name=cust.first_name, last_name=cust.last_name)
+  pawn\views_client.py:90:            user.set_unusable_password()
+  pawn\views_client.py:91:            user.save()
+  pawn\views_client.py:92:            cust.user = user
+  pawn\views_client.py:93:            cust.email = cust.email or ident["email"]
+  pawn\views_client.py:94:            cust.save()
+  pawn\views_client.py:95:            request.session.pop("signup_customer", None)
+  pawn\views_client.py:96:            request.session["new_key"] = new_recovery_key(user)
+  pawn\views_client.py:97:            login(request, user, 
+backend="django.contrib.auth.backends.ModelBackend")
+  pawn\views_client.py:98:            return redirect("client_key")
+  pawn\views_client.py:99:    return render(request, "app/signup.html", {"cust": cust, "error": error, 
+"demo": not settings.GOOGLE_CLIENT_ID})
+  pawn\views_client.py:100:
+  pawn\views_client.py:101:
+  pawn\views_client.py:102:@client_only
+> pawn\views_client.py:103:def recovery_key_page(request):
+  pawn\views_client.py:104:    key = request.session.pop("new_key", None)
+  pawn\views_client.py:105:    if not key:
+  pawn\views_client.py:106:        return redirect("client_home")
+  pawn\views_client.py:107:    return render(request, "app/key.html", {"key": key})
+  pawn\views_client.py:108:
+  pawn\views_client.py:109:
+> pawn\views_client.py:110:def client_login(request):
+  pawn\views_client.py:111:    if request.user.is_authenticated and request.user.is_client:
+  pawn\views_client.py:112:        return redirect("client_home")
+  pawn\views_client.py:113:    if request.GET.get("switch"):
+  pawn\views_client.py:114:        request.session.pop("pending_login", None)
+  pawn\views_client.py:115:        resp = redirect("client_login")
+  pawn\views_client.py:116:        resp.delete_cookie("op_known")
+  pawn\views_client.py:117:        return resp
+  pawn\views_client.py:118:    known = request.get_signed_cookie("op_known", default=None, 
+salt="op-device")
+  pawn\views_client.py:119:    uid = request.session.get("pending_login") or known
+  pawn\views_client.py:120:    user = User.objects.filter(pk=uid, role__role_name=Role.CLIENT).first() 
+if uid else None
+  pawn\views_client.py:121:    error = ""
+  pawn\views_client.py:122:    if request.method == "POST":
+  pawn\views_client.py:123:        if request.POST.get("step") == "google" or not user:
+  pawn\views_client.py:124:            ident = google_identity(request)
+  pawn\views_client.py:125:            user = User.objects.filter(google_id=ident["sub"], 
+role__role_name=Role.CLIENT).first() if ident else None
+  pawn\views_client.py:126:            if not user and ident:
+  pawn\views_client.py:127:                user = User.objects.filter(email=ident["email"], 
+role__role_name=Role.CLIENT).first()
+  pawn\views_client.py:128:            if user:
+  pawn\views_client.py:129:                request.session["pending_login"] = user.pk
+  pawn\views_client.py:130:            else:
+  pawn\views_client.py:131:                error = "We couldn't match that Google account. If you 
+haven't registered yet, tap Register."
+  pawn\views_client.py:132:        else:
+  pawn\views_client.py:133:            pin = request.POST.get("pin", "")
+  pawn\views_client.py:134:            if user.is_locked():
+  pawn\views_client.py:135:                mins = max(1, int((user.locked_until - 
+timezone.now()).total_seconds() // 60) + 1)
+  pawn\views_client.py:136:                error = f"Too many wrong PINs. Try again in about {mins} 
+minutes, or reset with your recovery key."
+  pawn\views_client.py:137:            elif user.status == "Inactive" or not user.is_active:
+  pawn\views_client.py:138:                error = "This account is deactivated. Please visit a branch."
+  pawn\views_client.py:139:            elif check_password(pin, user.pin_hash):
+  pawn\views_client.py:140:                user.failed_pin_attempts, user.locked_until, 
+user.last_login_at = 0, None, timezone.now()
+  pawn\views_client.py:141:                user.save(update_fields=["failed_pin_attempts", 
+"locked_until", "last_login_at"])
+  pawn\views_client.py:142:                login(request, user, 
+backend="django.contrib.auth.backends.ModelBackend")
+  pawn\views_client.py:143:                request.session.pop("pending_login", None)
+  pawn\views_client.py:144:                S.audit(user, "LOGIN", "users", user.pk)
+  pawn\views_client.py:145:                resp = redirect("client_home")
+  pawn\views_client.py:146:                resp.set_signed_cookie("op_known", user.pk, 
+salt="op-device", max_age=60 * 60 * 24 * 90, httponly=True, samesite="Lax")
+  pawn\views_client.py:147:                return resp
+  pawn\views_client.py:148:            else:
+  pawn\views_client.py:149:                user.failed_pin_attempts += 1
+  pawn\views_client.py:150:                left = settings.PIN_MAX_ATTEMPTS - user.failed_pin_attempts
+  pawn\views_client.py:151:                if left <= 0:
+  pawn\views_client.py:152:                    user.locked_until = timezone.now() + 
+timedelta(minutes=settings.PIN_LOCK_MINUTES)
+  pawn\views_client.py:153:                    user.failed_pin_attempts = 0
+  pawn\views_client.py:154:                    error = f"That was the fifth wrong PIN. The app is 
+locked for {settings.PIN_LOCK_MINUTES} minutes."
+  pawn\views_client.py:155:                else:
+  pawn\views_client.py:161:
+  pawn\views_client.py:162:
+> pawn\views_client.py:163:def recover(request):
+  pawn\views_client.py:164:    error = ""
+  pawn\views_client.py:165:    if request.method == "POST":
+  pawn\views_client.py:166:        ident = google_identity(request)
+  pawn\views_client.py:167:        user = User.objects.filter(email=ident["email"], 
+role__role_name=Role.CLIENT).first() if ident else None
+  pawn\views_client.py:168:        key = request.POST.get("key", "").strip().upper().replace(" ", "")
+  pawn\views_client.py:169:        pin, err = request.POST.get("pin", ""), 
+valid_pin(request.POST.get("pin", ""), request.POST.get("pin2", ""))
+  pawn\views_client.py:170:        match = None
+  pawn\views_client.py:171:        if user and not err:
+  pawn\views_client.py:172:            for rk in user.recovery_keys.filter(used_at__isnull=True):
+  pawn\views_client.py:173:                if check_password(key, rk.key_hash):
+  pawn\views_client.py:174:                    match = rk
+  pawn\views_client.py:175:                    break
+  pawn\views_client.py:176:        if err or not match:
+  pawn\views_client.py:177:            error = err or "That Google account and recovery key don't 
+match."
+  pawn\views_client.py:178:        else:
+  pawn\views_client.py:179:            match.used_at = timezone.now()
+  pawn\views_client.py:180:            match.save(update_fields=["used_at"])
+  pawn\views_client.py:181:            user.pin_hash, user.failed_pin_attempts, user.locked_until = 
+make_password(pin), 0, None
+  pawn\views_client.py:182:            user.save(update_fields=["pin_hash", "failed_pin_attempts", 
+"locked_until"])
+  pawn\views_client.py:183:            S.audit(user, "UPDATE", "users", user.pk, None, {"pin": "reset"})
+  pawn\views_client.py:184:            login(request, user, 
+backend="django.contrib.auth.backends.ModelBackend")
+  pawn\views_client.py:185:            request.session["new_key"] = new_recovery_key(user)
+  pawn\views_client.py:186:            return redirect("client_key")
+  pawn\views_client.py:187:    return render(request, "app/recover.html", {"error": error, "demo": not 
+settings.GOOGLE_CLIENT_ID})
+  pawn\views_client.py:188:
+  pawn\views_client.py:189:
+> pawn\views_client.py:190:def client_logout(request):
+  pawn\views_client.py:191:    logout(request)
+  pawn\views_client.py:192:    return redirect("client_welcome")
+  pawn\views_client.py:193:
+  pawn\views_client.py:194:
+  pawn\views_client.py:195:# 
+------------------------------------------------------------------------------- the app
+  pawn\views_client.py:196:@client_only
+  pawn\views_client.py:197:def home(request):
+  pawn\views_client.py:198:    c = request.cust
+  pawn\views_client.py:199:    open_t = 
+c.tickets.filter(status__in=PawnTicket.OPEN).select_related("item")
+  pawn\views_client.py:200:    cards = [(t, S.compute_due(t)) for t in open_t]
+  pawn\views_client.py:201:    alerts = []
+  pawn\views_client.py:202:    for t, d in cards:
+  pawn\views_client.py:203:        if d["overdue"]:
+  pawn\views_client.py:204:            alerts.append((f"{t.ticket_no} is past maturity. 
+{max(d['days_to_expiry'], 0)} days left before auction.", "bad"))
+  pawn\views_client.py:205:        elif d["days_to_maturity"] <= 7:
+  pawn\views_client.py:206:            when = "today" if d["days_to_maturity"] == 0 else f"in 
+{d['days_to_maturity']} day{'s' if d['days_to_maturity'] != 1 else ''}"
+  pawn\views_client.py:207:            alerts.append((f"{t.ticket_no} matures {when}.", "warn"))
+  pawn\views_client.py:208:    expired = c.tickets.filter(status__in=("Expired", "For Auction"))
+  pawn\views_client.py:209:    for t in expired:
+  pawn\views_client.py:210:        alerts.append((f"{t.ticket_no} has expired and the item is up for 
+auction.", "bad"))
+  pawn\views_client.py:211:    total_redeem = sum((d["redeem_total"] for _, d in cards), 0)  # shown on 
+the blue summary card
+  pawn\views_client.py:212:    next_due = min((t.maturity_date for t, _ in cards), default=None)
+  pawn\views_client.py:213:    return render(request, "app/home.html", {"cards": cards, "alerts": 
+alerts, "total_redeem": total_redeem, "next_due": next_due,
+  pawn\views_client.py:214:                                             "recent": 
+c.transactions.select_related("transaction_type")[:4]})
+  pawn\views_client.py:215:
+  pawn\views_client.py:216:
+  pawn\views_client.py:217:@client_only
+  pawn\views_client.py:218:def history(request):
+  pawn\views_client.py:219:    qs = request.cust.transactions.select_related("transaction_type")
+  pawn\views_client.py:220:    kind, status = request.GET.get("type", ""), request.GET.get("status", "")
+  pawn\views_client.py:221:    if kind:
+  pawn\views_client.py:222:        qs = qs.filter(transaction_type__type_name=kind)
+  pawn\views_client.py:223:    if status:
+  pawn\views_client.py:224:        qs = qs.filter(status=status)
+  pawn\views_client.py:225:    types = ["Appraise", "Sangla", "Loan", "Padala", "Load", "Redemption", 
+"Renewal"]
+  pawn\views_client.py:226:    return render(request, "app/history.html", {"txns": qs[:100], "types": 
+types, "kind": kind, "status": status})
+  pawn\views_client.py:227:
+  pawn\views_client.py:228:
+  pawn\views_client.py:229:@client_only
+  pawn\views_client.py:230:def ticket(request, pk):
+  pawn\views_client.py:231:    t = get_object_or_404(PawnTicket.objects.select_related("item", 
+"item__category", "transaction"), pk=pk, customer=request.cust)
+  pawn\views_client.py:232:    stages = ["Appraised", "In Vault", "Due Soon", "Redeemed"] if t.status 
+in ("Active", "Renewed", "Redeemed") else \
+  pawn\views_client.py:233:        ["Appraised", "In Vault", "For Auction", "Sold"]
+  pawn\views_client.py:234:    current = t.tracker_stage
+  pawn\views_client.py:235:    idx = stages.index(current) if current in stages else 1
+  pawn\views_client.py:302:
+  pawn\views_client.py:303:@client_only
+> pawn\views_client.py:304:def profile(request):
+  pawn\views_client.py:305:    c = request.cust
+  pawn\views_client.py:306:    return render(request, "app/profile.html", {"c": c, "currencies": 
+Currency.objects.all(), "cur": request.session.get("cur", "PHP")})
+  pawn\views_client.py:307:
+  pawn\views_client.py:308:
+  pawn\views_client.py:309:@client_only
+  pawn\views_client.py:310:@require_POST
+  pawn\views_client.py:311:def set_currency(request):
+  pawn\views_client.py:312:    code = request.POST.get("cur", "PHP")
+  pawn\views_client.py:313:    if Currency.objects.filter(code=code).exists():
+  pawn\views_client.py:314:        request.session["cur"] = code
+  pawn\views_client.py:315:    return redirect(request.POST.get("next") or "client_profile")
+
+
+
+=== views_client.py: imports ===
+
+pawn\views_client.py:1:import secrets
+pawn\views_client.py:2:from functools import wraps
+pawn\views_client.py:4:from django.conf import settings
+pawn\views_client.py:5:from django.contrib import messages
+pawn\views_client.py:6:from django.contrib.auth import login, logout
+pawn\views_client.py:7:from django.contrib.auth.hashers import check_password, make_password
+pawn\views_client.py:8:from django.http import Http404, HttpResponse
+pawn\views_client.py:9:from django.shortcuts import get_object_or_404, redirect, render
+pawn\views_client.py:10:from django.utils import timezone
+pawn\views_client.py:11:from django.views.decorators.http import require_POST
+pawn\views_client.py:12:from datetime import timedelta
+pawn\views_client.py:14:from . import forms as F
+pawn\views_client.py:15:from . import services as S
+pawn\views_client.py:16:from .models import Branch, ChatSession, Currency, Customer, PawnTicket, 
+RecoveryKey, Role, SupportMessage, SupportTicket, Transaction, User
+
+
+
+=== views_staff.py: auth views ===
+
+  pawn\views_staff.py:93:
+  pawn\views_staff.py:94:# 
+------------------------------------------------------------------------------- login
+> pawn\views_staff.py:95:def staff_login(request):
+  pawn\views_staff.py:96:    if request.user.is_authenticated and request.user.is_staff_user:
+  pawn\views_staff.py:97:        return redirect("staff_dashboard")
+  pawn\views_staff.py:98:    error = ""
+  pawn\views_staff.py:99:    if request.method == "POST":
+  pawn\views_staff.py:100:        name, pw = request.POST.get("username", "").strip(), 
+request.POST.get("password", "")
+  pawn\views_staff.py:101:        user = 
+User.objects.filter(username=name).select_related("role").first()
+  pawn\views_staff.py:102:        if user and user.is_locked():
+  pawn\views_staff.py:103:            error = "Too many wrong passwords. Try again in a few minutes."
+  pawn\views_staff.py:104:        else:
+  pawn\views_staff.py:105:            auth = authenticate(request, username=name, password=pw)
+  pawn\views_staff.py:106:            if auth and auth.is_staff_user and auth.is_active:
+  pawn\views_staff.py:107:                auth.failed_pin_attempts, auth.locked_until, 
+auth.last_login_at = 0, None, timezone.now()
+  pawn\views_staff.py:108:                auth.save(update_fields=["failed_pin_attempts", 
+"locked_until", "last_login_at"])
+  pawn\views_staff.py:109:                login(request, auth)
+  pawn\views_staff.py:110:                S.audit(auth, "LOGIN", "users", auth.pk)
+  pawn\views_staff.py:111:                nxt = request.GET.get("next", "")
+  pawn\views_staff.py:112:                return redirect(nxt if nxt.startswith("/staff/") else 
+"staff_dashboard")
+  pawn\views_staff.py:113:            if user and user.is_staff_user:
+  pawn\views_staff.py:114:                user.failed_pin_attempts += 1
+  pawn\views_staff.py:115:                if user.failed_pin_attempts >= 5:
+  pawn\views_staff.py:116:                    user.locked_until = timezone.now() + timedelta(minutes=15)
+  pawn\views_staff.py:117:                    user.failed_pin_attempts = 0
+  pawn\views_staff.py:118:                user.save(update_fields=["failed_pin_attempts", 
+"locked_until"])
+  pawn\views_staff.py:119:            error = "That username and password don't match."
+  pawn\views_staff.py:120:    return render(request, "staff/login.html", {"error": error})
+  pawn\views_staff.py:121:
+  pawn\views_staff.py:122:
+> pawn\views_staff.py:123:def staff_logout(request):
+  pawn\views_staff.py:124:    logout(request)
+  pawn\views_staff.py:125:    return redirect("staff_login")
+  pawn\views_staff.py:126:
+  pawn\views_staff.py:127:
+  pawn\views_staff.py:128:# --------------------------------------------------------------------------- 
+dashboard
+  pawn\views_staff.py:129:@staff_only()
+  pawn\views_staff.py:130:def dashboard(request):
+  pawn\views_staff.py:131:    today = timezone.localdate()
+  pawn\views_staff.py:132:    open_t = 
+PawnTicket.objects.filter(status__in=PawnTicket.OPEN).select_related("customer", "item")
+  pawn\views_staff.py:133:    soon = open_t.filter(maturity_date__lte=today + 
+timedelta(days=7)).order_by("maturity_date")
+  pawn\views_staff.py:134:    led = CashLedger.objects.filter(recorded_at__date=today)
+  pawn\views_staff.py:135:    if not request.user.is_admin_role:
+  pawn\views_staff.py:136:        led = led.filter(branch=request.emp.branch)
+  pawn\views_staff.py:137:    ctx = {
+  pawn\views_staff.py:138:        "open_count": open_t.count(), "principal": 
+open_t.aggregate(s=Sum("loan_amount"))["s"] or 0,
+  pawn\views_staff.py:139:        "soon": [(t, S.compute_due(t)) for t in soon[:12]],
+  pawn\views_staff.py:140:        "cash_in": led.filter(direction="IN").aggregate(s=Sum("amount"))["s"] 
+or 0,
+  pawn\views_staff.py:141:        "cash_out": 
+led.filter(direction="OUT").aggregate(s=Sum("amount"))["s"] or 0,
+  pawn\views_staff.py:142:        "pending": Customer.objects.filter(status="Pending 
+Verification").count(),
+  pawn\views_staff.py:143:        "support_open": 
+SupportTicket.objects.exclude(status="Resolved").count(),
+  pawn\views_staff.py:144:        "for_auction": PawnTicket.objects.filter(status="Expired").count(),
+  pawn\views_staff.py:145:        "recent": Transaction.objects.select_related("customer", 
+"transaction_type").order_by("-created_at")[:8],
+  pawn\views_staff.py:146:        "pending_appraisals": 
+Appraisal.objects.filter(result="Pending").count(),
+  pawn\views_staff.py:147:        # real totals for the "this year" cards
+  pawn\views_staff.py:148:        "customers_total": Customer.objects.count(),
+  pawn\views_staff.py:149:        "customers_this_year": 
+Customer.objects.filter(registered_at__year=today.year).count(),
+  pawn\views_staff.py:150:        "tickets_this_year": 
+PawnTicket.objects.filter(loan_date__year=today.year).count(),
+  pawn\views_staff.py:151:        "branch_count": Branch.objects.filter(status="Active").count(),
+  pawn\views_staff.py:152:        "category_count": ItemCategory.objects.count(),
+  pawn\views_staff.py:153:        "year": today.year,
+  pawn\views_staff.py:154:    }
+  pawn\views_staff.py:155:    return render(request, "staff/dashboard.html", ctx)
+  pawn\views_staff.py:156:
+  pawn\views_staff.py:157:
+  pawn\views_staff.py:158:# --------------------------------------------------------------------------- 
+customers
+  pawn\views_staff.py:159:CUSTOMER_SORT = [("last_name", "Name (A to Z)"), ("-registered_at", "Newest 
+first"), ("registered_at", "Oldest first"),
+  pawn\views_staff.py:160:                 ("status", "Status")]
+  pawn\views_staff.py:161:
+  pawn\views_staff.py:162:
+  pawn\views_staff.py:163:@staff_only(CASHIER, APPRAISER)
+  pawn\views_staff.py:787:
+  pawn\views_staff.py:788:@staff_only(ADMIN)
+> pawn\views_staff.py:789:def employees(request):
+  pawn\views_staff.py:790:    qs = Employee.objects.select_related("user", "user__role", "branch")
+  pawn\views_staff.py:791:    qs = search_qs(request, qs, ["first_name", "last_name", "user__username", 
+"position", "branch__branch_name"])
+  pawn\views_staff.py:792:    qs = sort_qs(request, qs, EMPLOYEE_SORT)
+  pawn\views_staff.py:793:    page, qstr = paginate(request, qs)
+  pawn\views_staff.py:794:    rows = [{"cells": [e.full_name, e.user.username, e.user.role_name, 
+e.branch.branch_name, e.status],
+  pawn\views_staff.py:795:             "url": f"/staff/admin/employees/{e.pk}/edit/", "badge": 4} for e 
+in page]
+  pawn\views_staff.py:796:    return table(request, "Employees", ["Name", "Username", "Role", "Branch", 
+"Status"], rows, page, qstr,
+  pawn\views_staff.py:797:                 search=True, sort_options=EMPLOYEE_SORT,
+  pawn\views_staff.py:798:                 add_url="/staff/admin/employees/new/", add_label="Add 
+employee")
+  pawn\views_staff.py:799:
+  pawn\views_staff.py:800:
+  pawn\views_staff.py:801:@staff_only(ADMIN)
+> pawn\views_staff.py:802:def employee_edit(request, pk=None):
+  pawn\views_staff.py:803:    emp = get_object_or_404(Employee, pk=pk) if pk else None
+  pawn\views_staff.py:804:    form = F.EmployeeForm(request.POST or None, instance=emp)
+  pawn\views_staff.py:805:    if request.method == "POST" and form.is_valid():
+  pawn\views_staff.py:806:        saved = form.save()
+  pawn\views_staff.py:807:        S.audit(request.user, "UPDATE" if emp else "CREATE", "employees", 
+saved.pk)
+  pawn\views_staff.py:808:        messages.success(request, "Employee saved.")
+  pawn\views_staff.py:809:        return redirect("employees")
+  pawn\views_staff.py:810:    return form_page(request, "Edit employee" if emp else "Add employee", 
+form, "/staff/admin/employees/")
+  pawn\views_staff.py:811:
+  pawn\views_staff.py:812:
+  pawn\views_staff.py:813:AUDIT_SORT = [("-logged_at", "Newest first"), ("logged_at", "Oldest first"), 
+("action", "Action"), ("table_name", "Table")]
+  pawn\views_staff.py:814:
+  pawn\views_staff.py:815:
+  pawn\views_staff.py:816:@staff_only(ADMIN)
+  pawn\views_staff.py:817:def audit_log(request):
+  pawn\views_staff.py:818:    qs = search_qs(request, AuditLog.objects.select_related("user"), 
+["table_name", "action", "user__username"])
+  pawn\views_staff.py:819:    qs = sort_qs(request, qs, AUDIT_SORT)
+  pawn\views_staff.py:820:    page, qstr = paginate(request, qs, 30)
+  pawn\views_staff.py:821:    rows = [{"cells": [f"{timezone.localtime(a.logged_at):%b %d %I:%M:%S 
+%p}", a.user.username if a.user else "system", a.action,
+  pawn\views_staff.py:822:                       a.table_name, a.record_id or "", str(a.new_value or 
+"")[:70]]} for a in page]
+  pawn\views_staff.py:823:    return table(request, "Audit log", ["When", "User", "Action", "Table", 
+"Record", "Change"], rows, page, qstr, search=True,
+  pawn\views_staff.py:824:                 sort_options=AUDIT_SORT)
+  pawn\views_staff.py:825:
+  pawn\views_staff.py:826:
+  pawn\views_staff.py:827:@staff_only(ADMIN)
+  pawn\views_staff.py:828:def backups(request):
+  pawn\views_staff.py:829:    if request.method == "POST":
+  pawn\views_staff.py:830:        from django.core.management import call_command
+  pawn\views_staff.py:831:        import io
+  pawn\views_staff.py:832:        err = io.StringIO()
+  pawn\views_staff.py:833:        call_command("backup", stderr=err)
+  pawn\views_staff.py:834:        if err.getvalue():
+  pawn\views_staff.py:835:            messages.error(request, err.getvalue().strip())
+  pawn\views_staff.py:836:        else:
+  pawn\views_staff.py:837:            messages.success(request, "Backup finished.")
+  pawn\views_staff.py:838:        return redirect("backups")
+  pawn\views_staff.py:839:    rows = [{"cells": [f"{timezone.localtime(b.run_at):%b %d, %Y %I:%M %p}", 
+b.file_path, f"{b.size_mb} MB", b.status], "badge": 3}
+  pawn\views_staff.py:840:            for b in BackupLog.objects.all()[:30]]
+  pawn\views_staff.py:841:    return table(request, "Backups", ["Run at", "File", "Size", "Status"], 
+rows, backup=True)
+  pawn\views_staff.py:842:
+
+
+
+=== forms.py: auth forms ===
+
+> pawn\forms.py:129:class CustomerEditForm(StyledModelForm):
+  pawn\forms.py:130:    class Meta:
+  pawn\forms.py:131:        model = Customer
+  pawn\forms.py:132:        fields = ["first_name", "middle_name", "last_name", "birthdate", "sex", 
+"civil_status", "nationality",
+  pawn\forms.py:133:                  "address", "mobile_no", "email", "source_of_income"]
+  pawn\forms.py:134:
+  pawn\forms.py:135:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:136:        super().__init__(*args, **kwargs)
+  pawn\forms.py:137:        self.fields["birthdate"].widget = forms.DateInput(attrs={"class": "in", 
+"type": "date"}, format="%Y-%m-%d")
+  pawn\forms.py:138:
+  pawn\forms.py:139:    def clean_mobile_no(self):
+  pawn\forms.py:140:        m = normalize_mobile(self.cleaned_data["mobile_no"])
+  pawn\forms.py:141:        if 
+Customer.objects.filter(mobile_no=m).exclude(pk=self.instance.pk).exists():
+  pawn\forms.py:142:            raise forms.ValidationError("This mobile number belongs to another 
+customer.")
+  pawn\forms.py:143:        return m
+  pawn\forms.py:144:
+  pawn\forms.py:145:
+  pawn\forms.py:146:# -------------------------------------------------------------------------- 
+appraisal / pawn
+  pawn\forms.py:147:def active_customers():
+  pawn\forms.py:148:    return Customer.objects.filter(status="Active").order_by("last_name", 
+"first_name")
+  pawn\forms.py:149:
+  pawn\forms.py:150:
+  pawn\forms.py:151:class AppraisalForm(Styled):
+  pawn\forms.py:152:    customer = forms.ModelChoiceField(Customer.objects.none())
+  pawn\forms.py:153:    category = forms.ModelChoiceField(ItemCategory.objects.all())
+  pawn\forms.py:154:    item_type = forms.CharField(max_length=60, label="Item", help_text="Example: 
+18k gold necklace")
+  pawn\forms.py:155:    description = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), 
+help_text="Brand, model, serial, karat, weight")
+  pawn\forms.py:156:    item_condition = forms.ChoiceField(choices=[(x, x) for x in ("Excellent", 
+"Good", "Fair", "Poor")], initial="Good")
+  pawn\forms.py:157:    appraised_value = forms.DecimalField(min_value=Decimal("1"), max_digits=12, 
+decimal_places=2)
+  pawn\forms.py:158:    suggested_loan = forms.DecimalField(required=False, min_value=Decimal("1"), 
+max_digits=12, decimal_places=2,
+  pawn\forms.py:159:                                        help_text="Leave blank to use 60% of the 
+appraised value")
+  pawn\forms.py:160:    remarks = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 
+2}))
+  pawn\forms.py:161:    photos = MultipleFileField(required=False)
+  pawn\forms.py:162:
+  pawn\forms.py:163:    def __init__(self, *args, **kwargs):
+  pawn\forms.py:164:        super().__init__(*args, **kwargs)
+> pawn\forms.py:312:class EmployeeForm(Styled):
+  pawn\forms.py:313:    username = forms.CharField(max_length=150)
+  pawn\forms.py:314:    password = forms.CharField(widget=forms.PasswordInput(render_value=False), 
+required=False,
+  pawn\forms.py:315:                               help_text="At least 8 characters. Leave blank to 
+keep the current password when editing.")
+  pawn\forms.py:316:    first_name = forms.CharField(max_length=60)
+  pawn\forms.py:317:    last_name = forms.CharField(max_length=60)
+  pawn\forms.py:318:    role = forms.ModelChoiceField(Role.objects.none())
+  pawn\forms.py:319:    branch = forms.ModelChoiceField(Branch.objects.all())
+  pawn\forms.py:320:    position = forms.CharField(max_length=60, required=False)
+  pawn\forms.py:321:    contact_no = forms.CharField(max_length=30, required=False)
+  pawn\forms.py:322:    date_hired = forms.DateField(initial=timezone.localdate)
+  pawn\forms.py:323:    status = forms.ChoiceField(choices=[("Active", "Active"), ("Resigned", 
+"Resigned")])
+  pawn\forms.py:324:
+  pawn\forms.py:325:    def __init__(self, *args, instance=None, **kwargs):
+  pawn\forms.py:326:        self.instance = instance
+  pawn\forms.py:327:        if instance and "initial" not in kwargs:
+  pawn\forms.py:328:            kwargs["initial"] = dict(username=instance.user.username, 
+first_name=instance.first_name,
+  pawn\forms.py:329:                                     last_name=instance.last_name, 
+role=instance.user.role, branch=instance.branch,
+  pawn\forms.py:330:                                     position=instance.position, 
+contact_no=instance.contact_no,
+  pawn\forms.py:331:                                     date_hired=instance.date_hired, 
+status=instance.status)
+  pawn\forms.py:332:        super().__init__(*args, **kwargs)
+  pawn\forms.py:333:        self.fields["role"].queryset = Role.objects.exclude(role_name=Role.CLIENT)
+  pawn\forms.py:334:
+  pawn\forms.py:335:    def clean_username(self):
+  pawn\forms.py:336:        u = self.cleaned_data["username"]
+  pawn\forms.py:337:        qs = User.objects.filter(username=u)
+  pawn\forms.py:338:        if self.instance:
+  pawn\forms.py:339:            qs = qs.exclude(pk=self.instance.user_id)
+  pawn\forms.py:340:        if qs.exists():
+  pawn\forms.py:341:            raise forms.ValidationError("That username is taken.")
+  pawn\forms.py:342:        return u
+  pawn\forms.py:343:
+  pawn\forms.py:344:    def clean_password(self):
+  pawn\forms.py:345:        p = self.cleaned_data["password"]
+  pawn\forms.py:346:        if not self.instance and len(p) < 8:
+  pawn\forms.py:347:            raise forms.ValidationError("Set a password with at least 8 
+characters.")
+
+
+
+=== models.py: user/customer/employee ===
+
+> pawn\models.py:30:class User(AbstractUser):
+  pawn\models.py:31:    email = models.EmailField(unique=True, null=True, blank=True)
+  pawn\models.py:32:    role = models.ForeignKey(Role, on_delete=models.PROTECT, null=True, 
+related_name="users")
+  pawn\models.py:33:    google_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
+  pawn\models.py:34:    pin_hash = models.CharField(max_length=160, blank=True)
+  pawn\models.py:35:    failed_pin_attempts = models.PositiveSmallIntegerField(default=0)
+  pawn\models.py:36:    locked_until = models.DateTimeField(null=True, blank=True)
+  pawn\models.py:37:    status = models.CharField(max_length=10, default="Active",
+  pawn\models.py:38:                              choices=[("Active", "Active"), ("Inactive", 
+"Inactive"), ("Locked", "Locked")])
+  pawn\models.py:39:    last_login_at = models.DateTimeField(null=True, blank=True)
+  pawn\models.py:40:    created_at = models.DateTimeField(default=timezone.now)
+  pawn\models.py:41:
+  pawn\models.py:42:    @property
+  pawn\models.py:43:    def role_name(self):
+  pawn\models.py:44:        return self.role.role_name if self.role_id else ""
+  pawn\models.py:45:
+  pawn\models.py:46:    @property
+  pawn\models.py:47:    def is_client(self):
+  pawn\models.py:48:        return self.role_name == Role.CLIENT
+  pawn\models.py:49:
+  pawn\models.py:50:    @property
+  pawn\models.py:51:    def is_staff_user(self):
+  pawn\models.py:52:        return self.role_name in (Role.ADMIN, Role.CASHIER, Role.APPRAISER)
+  pawn\models.py:53:
+  pawn\models.py:54:    @property
+  pawn\models.py:55:    def is_admin_role(self):
+  pawn\models.py:56:        return self.role_name == Role.ADMIN
+  pawn\models.py:57:
+  pawn\models.py:58:    def is_locked(self):
+  pawn\models.py:59:        return bool(self.locked_until and self.locked_until > timezone.now())
+  pawn\models.py:60:
+  pawn\models.py:61:
+  pawn\models.py:62:class RecoveryKey(models.Model):
+  pawn\models.py:63:    user = models.ForeignKey(User, on_delete=models.CASCADE, 
+related_name="recovery_keys")
+  pawn\models.py:64:    key_hash = models.CharField(max_length=160)
+  pawn\models.py:65:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:66:    used_at = models.DateTimeField(null=True, blank=True)
+  pawn\models.py:67:
+  pawn\models.py:68:
+  pawn\models.py:69:class Branch(models.Model):
+  pawn\models.py:70:    branch_name = models.CharField(max_length=80, unique=True)
+  pawn\models.py:71:    address = models.CharField(max_length=200)
+  pawn\models.py:72:    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+  pawn\models.py:73:    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+  pawn\models.py:74:    contact_no = models.CharField(max_length=30, blank=True)
+  pawn\models.py:75:    open_time = models.TimeField()
+> pawn\models.py:89:class Employee(models.Model):
+  pawn\models.py:90:    user = models.OneToOneField(User, on_delete=models.CASCADE, 
+related_name="employee")
+  pawn\models.py:91:    branch = models.ForeignKey(Branch, on_delete=models.PROTECT, 
+related_name="employees")
+  pawn\models.py:92:    first_name = models.CharField(max_length=60)
+  pawn\models.py:93:    last_name = models.CharField(max_length=60)
+  pawn\models.py:94:    position = models.CharField(max_length=60, blank=True)
+  pawn\models.py:95:    contact_no = models.CharField(max_length=30, blank=True)
+  pawn\models.py:96:    date_hired = models.DateField(default=timezone.localdate)
+  pawn\models.py:97:    status = models.CharField(max_length=10, default="Active", choices=[("Active", 
+"Active"), ("Resigned", "Resigned")])
+  pawn\models.py:98:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:99:
+  pawn\models.py:100:    @property
+  pawn\models.py:101:    def full_name(self):
+  pawn\models.py:102:        return f"{self.first_name} {self.last_name}"
+  pawn\models.py:103:
+  pawn\models.py:104:    def __str__(self):
+  pawn\models.py:105:        return self.full_name
+  pawn\models.py:106:
+  pawn\models.py:107:
+  pawn\models.py:108:class IDType(models.Model):
+  pawn\models.py:109:    id_type_name = models.CharField(max_length=60, unique=True)
+  pawn\models.py:110:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:111:
+  pawn\models.py:112:    class Meta:
+  pawn\models.py:113:        verbose_name = "ID type"
+  pawn\models.py:114:
+  pawn\models.py:115:    def __str__(self):
+  pawn\models.py:116:        return self.id_type_name
+  pawn\models.py:117:
+  pawn\models.py:118:
+> pawn\models.py:119:class Customer(models.Model):
+  pawn\models.py:120:    code = models.CharField(max_length=20, unique=True, blank=True)
+  pawn\models.py:121:    user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, 
+blank=True, related_name="customer")
+  pawn\models.py:122:    first_name = models.CharField(max_length=60)
+  pawn\models.py:123:    middle_name = models.CharField(max_length=60, blank=True)
+  pawn\models.py:124:    last_name = models.CharField(max_length=60)
+  pawn\models.py:125:    birthdate = models.DateField()
+  pawn\models.py:126:    sex = models.CharField(max_length=10, choices=[("Female", "Female"), ("Male", 
+"Male")])
+  pawn\models.py:127:    civil_status = models.CharField(max_length=12, choices=[(x, x) for x in 
+("Single", "Married", "Widowed", "Separated")])
+  pawn\models.py:128:    nationality = models.CharField(max_length=40, default="Filipino")
+  pawn\models.py:129:    address = models.CharField(max_length=200)
+  pawn\models.py:130:    mobile_no = models.CharField(max_length=15, unique=True)
+  pawn\models.py:131:    email = models.EmailField(blank=True)
+  pawn\models.py:132:    source_of_income = models.CharField(max_length=100)
+  pawn\models.py:133:    status = models.CharField(max_length=24, default="Pending Verification",
+  pawn\models.py:134:                              choices=[(x, x) for x in ("Pending Verification", 
+"Active", "Deactivated")])
+  pawn\models.py:135:    verified_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, 
+null=True, blank=True, related_name="verified_customers")
+  pawn\models.py:136:    verified_at = models.DateTimeField(null=True, blank=True)
+  pawn\models.py:137:    registered_at = models.DateTimeField(default=timezone.now)
+  pawn\models.py:138:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:139:
+  pawn\models.py:140:    class Meta:
+  pawn\models.py:141:        ordering = ["-registered_at"]
+  pawn\models.py:142:
+  pawn\models.py:143:    def save(self, *args, **kwargs):
+  pawn\models.py:144:        super().save(*args, **kwargs)
+  pawn\models.py:145:        if not self.code:
+  pawn\models.py:146:            self.code = f"PPS-C-{self.pk:06d}"
+  pawn\models.py:147:            super().save(update_fields=["code"])
+  pawn\models.py:148:
+  pawn\models.py:149:    @property
+  pawn\models.py:150:    def full_name(self):
+  pawn\models.py:151:        return " ".join(p for p in (self.first_name, self.middle_name, 
+self.last_name) if p)
+  pawn\models.py:152:
+  pawn\models.py:153:    @property
+  pawn\models.py:154:    def age(self):
+  pawn\models.py:155:        t = timezone.localdate()
+  pawn\models.py:156:        b = self.birthdate
+  pawn\models.py:157:        return t.year - b.year - ((t.month, t.day) < (b.month, b.day))
+  pawn\models.py:158:
+  pawn\models.py:159:    def __str__(self):
+  pawn\models.py:160:        return f"{self.code} - {self.full_name}"
+  pawn\models.py:161:
+  pawn\models.py:162:
+> pawn\models.py:163:class CustomerID(models.Model):
+  pawn\models.py:164:    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, 
+related_name="ids")
+  pawn\models.py:165:    id_type = models.ForeignKey(IDType, on_delete=models.PROTECT)
+  pawn\models.py:166:    id_number_enc = models.TextField()                     # encrypted at rest
+  pawn\models.py:167:    id_hash = models.CharField(max_length=64)               # for duplicate checks 
+only
+  pawn\models.py:168:    front_image = models.FileField(storage=private_storage, upload_to="ids/", 
+blank=True)
+  pawn\models.py:169:    back_image = models.FileField(storage=private_storage, upload_to="ids/", 
+blank=True)
+  pawn\models.py:170:    selfie_image = models.FileField(storage=private_storage, upload_to="ids/", 
+blank=True)
+  pawn\models.py:171:    expiry_date = models.DateField(null=True, blank=True)
+  pawn\models.py:172:    verification_status = models.CharField(max_length=10, default="Pending",
+  pawn\models.py:173:                                           choices=[(x, x) for x in ("Pending", 
+"Verified", "Rejected")])
+  pawn\models.py:174:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:175:
+  pawn\models.py:176:    class Meta:
+  pawn\models.py:177:        unique_together = [("id_type", "id_hash")]
+  pawn\models.py:178:
+  pawn\models.py:179:
+  pawn\models.py:180:# ------------------------------------------------------------------------------- 
+currencies
+  pawn\models.py:181:class Currency(models.Model):
+  pawn\models.py:182:    code = models.CharField(max_length=3, unique=True)
+  pawn\models.py:183:    name = models.CharField(max_length=40)
+  pawn\models.py:184:    symbol = models.CharField(max_length=4)
+  pawn\models.py:185:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:186:
+  pawn\models.py:187:    class Meta:
+  pawn\models.py:188:        verbose_name_plural = "currencies"
+  pawn\models.py:189:
+  pawn\models.py:190:    def __str__(self):
+  pawn\models.py:191:        return self.code
+  pawn\models.py:192:
+  pawn\models.py:193:    def rate(self):
+  pawn\models.py:194:        if self.code == "PHP":
+  pawn\models.py:195:            return Decimal("1")
+  pawn\models.py:196:        from . import services as S
+  pawn\models.py:197:        r = self.rates.order_by("-effective_date", "-id").first()
+  pawn\models.py:198:        r = S.refresh_if_stale(self, r)
+  pawn\models.py:199:        return r.rate_to_php if r else Decimal("1")
+  pawn\models.py:200:
+  pawn\models.py:201:
+  pawn\models.py:202:class ExchangeRate(models.Model):
+  pawn\models.py:203:    currency = models.ForeignKey(Currency, on_delete=models.CASCADE, 
+related_name="rates")
+  pawn\models.py:204:    rate_to_php = models.DecimalField(max_digits=12, decimal_places=6)
+  pawn\models.py:205:    effective_date = models.DateField(default=timezone.localdate)
+  pawn\models.py:206:    created_at = models.DateTimeField(auto_now_add=True)
+  pawn\models.py:207:
+  pawn\models.py:208:
+
+
+
+=== services.py: auth/sms/email ===
+
+> pawn\services.py:118:def qr_token_for(txn_no):
+  pawn\services.py:119:    return signing.dumps({"n": txn_no}, salt="op-qr")
+  pawn\services.py:120:
+  pawn\services.py:121:
+> pawn\services.py:122:def txn_no_from_token(token):
+  pawn\services.py:123:    try:
+  pawn\services.py:124:        return signing.loads(token.strip(), salt="op-qr")["n"]
+  pawn\services.py:125:    except signing.BadSignature:
+  pawn\services.py:126:        return None
+  pawn\services.py:127:
+  pawn\services.py:128:
+  pawn\services.py:129:def qr_png(data):
+  pawn\services.py:130:    import qrcode
+  pawn\services.py:131:    img = qrcode.make(data, box_size=8, border=2)
+  pawn\services.py:132:    buf = io.BytesIO()
+  pawn\services.py:133:    img.save(buf, format="PNG")
+  pawn\services.py:134:    return buf.getvalue()
+  pawn\services.py:135:
+  pawn\services.py:136:
+  pawn\services.py:137:def next_txn_no(today=None):
+  pawn\services.py:138:    today = today or timezone.localdate()
+  pawn\services.py:139:    prefix = f"PPS-{today:%Y%m%d}-"
+  pawn\services.py:140:    n = Transaction.objects.filter(transaction_no__startswith=prefix).count() + 1
+  pawn\services.py:141:    while Transaction.objects.filter(transaction_no=f"{prefix}{n:04d}").exists():
+  pawn\services.py:142:        n += 1
+  pawn\services.py:143:    return f"{prefix}{n:04d}"
+  pawn\services.py:144:
+  pawn\services.py:145:
+  pawn\services.py:146:def new_txn(type_name, customer, employee, amount=ZERO, fee=ZERO, currency=None, 
+original=None, rate=None, branch=None):
+  pawn\services.py:147:    ttype, _ = TransactionType.objects.get_or_create(type_name=type_name)
+> pawn\services.py:443:def send_sms(customer, message, message_type, ticket=None):
+  pawn\services.py:444:    status = "Sent"
+  pawn\services.py:445:    if settings.SMS_BACKEND == "semaphore" and settings.SEMAPHORE_API_KEY:
+  pawn\services.py:446:        try:
+  pawn\services.py:447:            data = urllib.parse.urlencode({
+  pawn\services.py:448:                "apikey": settings.SEMAPHORE_API_KEY, "number": 
+customer.mobile_no, "message": message,
+  pawn\services.py:449:                "sendername": settings.SEMAPHORE_SENDER}).encode()
+  pawn\services.py:450:            urllib.request.urlopen("https://api.semaphore.co/api/v4/messages", 
+data=data, timeout=10)
+  pawn\services.py:451:        except Exception:
+  pawn\services.py:452:            status = "Failed"
+  pawn\services.py:453:    return SMSLog.objects.create(customer=customer, ticket=ticket, 
+message_type=message_type, message=message, status=status)
+  pawn\services.py:454:
+  pawn\services.py:455:
+  pawn\services.py:456:def run_alerts(today=None):
+  pawn\services.py:457:    """Nightly job: reminders, overdue notices, then flag tickets past the grace 
+period."""
+  pawn\services.py:458:    today = today or timezone.localdate()
+  pawn\services.py:459:    sent = expired = 0
+  pawn\services.py:460:    for t in 
+PawnTicket.objects.filter(status__in=PawnTicket.OPEN).select_related("customer", "item"):
+  pawn\services.py:461:        days = (t.maturity_date - today).days
+  pawn\services.py:462:        kind = text = None
+  pawn\services.py:463:        if days == 7:
+  pawn\services.py:464:            kind, text = "Reminder", f"ticket {t.ticket_no} matures in 7 days 
+({t.maturity_date:%b %d})."
+  pawn\services.py:465:        elif days == 1:
+  pawn\services.py:466:            kind, text = "Reminder", f"ticket {t.ticket_no} matures tomorrow 
+({t.maturity_date:%b %d})."
+  pawn\services.py:467:        elif days == 0:
+  pawn\services.py:468:            kind, text = "Due Today", f"ticket {t.ticket_no} is due today. 
+Redeem or renew at the counter."
+> pawn\services.py:632:def verify_google_token(id_token):
+  pawn\services.py:633:    """Checks a Google ID token with Google. Returns {"email", "sub", "name"} or 
+None."""
+  pawn\services.py:634:    if not settings.GOOGLE_CLIENT_ID:
+  pawn\services.py:635:        return None
+  pawn\services.py:636:    try:
+  pawn\services.py:637:        url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + 
+urllib.parse.quote(id_token)
+  pawn\services.py:638:        data = json.loads(urllib.request.urlopen(url, timeout=10).read())
+  pawn\services.py:639:    except Exception:
+  pawn\services.py:640:        return None
+  pawn\services.py:641:    if data.get("aud") != settings.GOOGLE_CLIENT_ID or 
+data.get("email_verified") not in ("true", True):
+  pawn\services.py:642:        return None
+  pawn\services.py:643:    return {"email": data["email"].lower(), "sub": data["sub"], "name": 
+data.get("name", "")}
+  pawn\services.py:644:
+  pawn\services.py:645:
+  pawn\services.py:646:# 
+-------------------------------------------------------------------------------- reports
+  pawn\services.py:647:def _txn_rows(qs):
+  pawn\services.py:648:    return [[t.transaction_no, timezone.localtime(t.created_at).strftime("%I:%M 
+%p"), t.transaction_type.type_name,
+  pawn\services.py:649:             t.customer.full_name, peso(t.amount), peso(t.fee), t.status, 
+t.employee.full_name if t.employee else "App"]
+  pawn\services.py:650:            for t in qs]
+  pawn\services.py:651:
+  pawn\services.py:652:
+  pawn\services.py:653:def build_report(name, employee, params):
+  pawn\services.py:654:    """Returns dict(title, headers, rows, summary). Cashiers only ever get their 
+own branch."""
+  pawn\services.py:655:    today = timezone.localdate()
+  pawn\services.py:656:    start = params.get("start") or today
+  pawn\services.py:657:    end = params.get("end") or start
+
+
+
+=== settings.py: auth/email/google/sms ===
+
+config\settings.py:32:    "django.contrib.auth",
+config\settings.py:34:    "django.contrib.sessions",
+config\settings.py:43:    "django.contrib.sessions.middleware.SessionMiddleware",
+config\settings.py:46:    "django.contrib.auth.middleware.AuthenticationMiddleware",
+config\settings.py:61:        "django.contrib.auth.context_processors.auth",
+config\settings.py:73:            "PASSWORD": env("DB_PASSWORD", ""),
+config\settings.py:87:AUTH_USER_MODEL = "pawn.User"
+config\settings.py:88:PASSWORD_HASHERS = [
+config\settings.py:89:    "django.contrib.auth.hashers.Argon2PasswordHasher",
+config\settings.py:90:    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+config\settings.py:92:AUTH_PASSWORD_VALIDATORS = [
+config\settings.py:93:    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", 
+"OPTIONS": {"min_length": 8}},
+config\settings.py:95:LOGIN_URL = "/staff/login/"
+config\settings.py:96:LOGIN_REDIRECT_URL = "/staff/"
+config\settings.py:97:LOGOUT_REDIRECT_URL = "/staff/login/"
+config\settings.py:113:SESSION_COOKIE_HTTPONLY = True
+config\settings.py:114:SESSION_COOKIE_SAMESITE = "Lax"
+config\settings.py:116:    SESSION_COOKIE_SECURE = True
+config\settings.py:123:    "DEFAULT_AUTHENTICATION_CLASSES": 
+["rest_framework.authentication.SessionAuthentication"],
+config\settings.py:124:    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+config\settings.py:131:GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "")
+config\settings.py:132:SMS_BACKEND = env("SMS_BACKEND", "mock")
+config\settings.py:133:SEMAPHORE_API_KEY = env("SEMAPHORE_API_KEY", "")
+config\settings.py:134:SEMAPHORE_SENDER = env("SEMAPHORE_SENDER", "")
+
+
+
+=== .env.example ===
+# Copy to .env and fill in what you need. Everything has a working default for the demo.
+SECRET_KEY=change-this-before-you-deploy
+DEBUG=1
+ALLOWED_HOSTS=*
+# Comma separated, only needed in production over HTTPS, e.g. https://yourname.pythonanywhere.com
+CSRF_TRUSTED_ORIGINS=
+
+# Google Sign-In for clients. Leave empty to use the email-only demo sign-in.
+GOOGLE_CLIENT_ID=
+
+# SMS: "mock" only writes to sms_logs. "semaphore" sends through semaphore.co
+SMS_BACKEND=mock
+SEMAPHORE_API_KEY=
+SEMAPHORE_SENDER=
+
+# Optional penalty on top of interest once a ticket is past maturity (0.00 = none)
+PAWN_PENALTY_RATE=0.00
+
+=== template: app\login.html ===
+{% extends "app/base.html" %}
+{% block content %}
+<div style="padding-top:8vh"><h1>{% if pin_step %}Hi{% if user_first %}, {{ user_first }}{% endif %}{% else %}Welcome back{% endif %}</h1>
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if pin_step %}<p class="soft">Enter your PIN.</p>
+<form method="post" class="card flat">{% csrf_token %}<input type="hidden" name="step" value="pin">
+<div class="field"><input class="in pin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="current-password" autofocus aria-label="PIN" required></div>
+<p class="soft small" style="margin:0 0 12px">It opens by itself after the 6th digit.</p><button class="btn block">Open</button></form>
+<p class="small"><a href="/app/login/?switch=1">Not you? Use another Google account</a> &middot; <a href="/app/recover/">Forgot PIN</a></p>
+{% else %}<p class="soft">Sign in with Google the first time on this phone. After that it's just your PIN.</p>
+<form method="post" class="card flat" {% if GOOGLE_CLIENT_ID %}data-autosubmit="1"{% endif %}>{% csrf_token %}<input type="hidden" name="step" value="google">
+{% include "app/_google.html" %}{% if not GOOGLE_CLIENT_ID %}<button class="btn block">Continue</button>{% endif %}</form>
+<p class="small">New here? <a href="/app/register/">Register</a></p>{% endif %}</div>
+{% endblock %}
+
+
+=== template: app\_google.html ===
+{% if GOOGLE_CLIENT_ID %}
+<input type="hidden" name="credential">
+<div id="g_id_onload" data-client_id="{{ GOOGLE_CLIENT_ID }}" data-callback="onGoogle" data-auto_prompt="false"></div>
+<div class="g_id_signin" data-type="standard" data-theme="filled_black" data-text="continue_with" data-shape="rectangular"></div>
+<p id="g-email" class="soft small"></p>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+{% else %}
+<div class="field"><label for="g-mail">Google email</label><input class="in" id="g-mail" type="email" name="email" autocomplete="email" required placeholder="you@gmail.com">
+<div class="help">Google Sign-In turns on once a client ID is added to the .env file. Until then the app takes the email directly (classroom demo mode).</div></div>
+{% endif %}
+
+
+=== template: app\recover.html ===
+{% extends "app/base.html" %}
+{% block content %}
+<h1>Reset your PIN</h1><p class="soft">Use your Google account and the recovery key you saved when you signed up.</p>
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+<form method="post" class="card flat">{% csrf_token %}{% include "app/_google.html" %}
+<div class="field"><label for="k">Recovery key</label><input class="in" id="k" name="key" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" required></div>
+<div class="field"><label for="pin">New 6-digit PIN</label><input class="in pin" id="pin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+<div class="field"><label for="pin2">Type it again</label><input class="in pin" id="pin2" name="pin2" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+<button class="btn block">Reset PIN</button></form>
+{% endblock %}
+
+
+=== template: app\register.html ===
+{% extends "app/base.html" %}
+{% block content %}
+<h1>Register</h1><p class="soft">Fill this in once. A staff member checks your ID before you can pawn or redeem. You must be 18 or older.</p>
+<form method="post" enctype="multipart/form-data" class="card flat">{% csrf_token %}{% include "staff/_fields.html" %}<button class="btn block">Continue</button></form>
+<p class="soft small">Already registered at a branch? <a href="/app/signup/">Finish your sign-up</a>.</p>
+{% endblock %}
+
+
+=== template: app\signup.html ===
+{% extends "app/base.html" %}
+{% block content %}
+<h1>Create your login</h1>
+{% if cust %}<p class="soft">Registered as <b>{{ cust.code }}</b>, {{ cust.full_name }}. Link a Google account and pick a PIN.</p>
+{% else %}<p class="soft">Registered at the counter? Enter the customer ID from your receipt and your mobile number.</p>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+<form method="post" class="card flat">{% csrf_token %}
+{% if not cust %}<div class="field"><label for="c">Customer ID</label><input class="in" id="c" name="code" placeholder="PPS-C-000124" required></div>
+<div class="field"><label for="m">Mobile number</label><input class="in" id="m" name="mobile" inputmode="tel" placeholder="09171234567" required></div>{% endif %}
+{% include "app/_google.html" %}
+<div class="field"><label for="pin">6-digit PIN</label><input class="in pin" id="pin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" required></div>
+<div class="field"><label for="pin2">Type the PIN again</label><input class="in pin" id="pin2" name="pin2" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="new-password" required></div>
+<button class="btn block">Create login</button></form>
+{% endblock %}
+
+
+=== template: app\key.html ===
+{% extends "app/base.html" %}
+{% block content %}
+<h1>Save your recovery key</h1>
+<p>If you forget your PIN, this key plus your Google account is the only way back in. We keep a scrambled copy only, so we can't show it again.</p>
+<div class="keybox">{{ key }}</div>
+<p class="soft small">Screenshot it or write it down and keep it somewhere private. Don't share it with anyone, including our staff.</p>
+<a class="btn block" href="/app/home/">I saved it</a>
+{% endblock %}
+
+
+=== template: app\profile.html ===
+{% extends "app/base.html" %}{% load pawn_extras %}
+{% block content %}
+<h1>{{ c.full_name }}</h1><span class="badge {{ c.status|badge }}">{{ c.status }}</span>
+<div class="card flat" style="margin-top:14px"><dl class="facts"><dt>Customer ID</dt><dd>{{ c.code }}</dd><dt>Mobile</dt><dd>{{ c.mobile_no }}</dd><dt>Email</dt><dd>{{ c.email|default:"-" }}</dd><dt>Address</dt><dd>{{ c.address }}</dd></dl>
+<p class="soft small" style="margin-top:10px">To change any of these, visit a branch with your ID.</p></div>
+<form method="post" action="/app/currency/" class="card flat">{% csrf_token %}<div class="field"><label for="cur">Show amounts in</label><select class="in" id="cur" name="cur">{% for x in currencies %}<option value="{{ x.code }}" {% if x.code == cur %}selected{% endif %}>{{ x.code }} ({{ x.symbol }})</option>{% endfor %}</select>
+<div class="help">Display only. Your tickets are always kept in pesos at the rate set on the day.</div></div><button class="btn ghost sm">Apply</button></form>
+<div class="card flat"><div class="field" style="margin:0"><label>Appearance</label>{% include "_theme_toggle.html" %}<div class="help">Auto follows your phone or computer setting. To make the text bigger, tap the <b>Text size</b> button at the top of the screen.</div></div></div>
+<div class="grid" style="grid-template-columns:1fr 1fr"><a class="card flat" href="/app/wrap/">Wrap Star</a><a class="card flat" href="/app/help/">Pawn Patrol</a></div>
+<a class="btn danger block" href="/app/logout/">Log out</a>
+{% endblock %}
+
+
+=== template: staff\login.html ===
+{% load static %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Staff login - Only Pawns</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="{% static 'pawn/js/theme-init.js' %}"></script><link rel="stylesheet" href="{% static 'pawn/css/app.css' %}"><link rel="stylesheet" href="{% static 'pawn/css/glass.css' %}"><link rel="stylesheet" href="{% static 'pawn/css/pawnshop.css' %}"></head>
+<body>{% include "_backdrop.html" %}<div class="center"><form method="post" class="card login">{% csrf_token %}
+<img src="{% static 'pawn/icons/logo-badge.png' %}" alt="" width="64" height="64" style="border-radius:16px;margin-bottom:10px"><h1>Only <span style="color:var(--pink)">Pawns</span></h1>
+<p class="soft">Staff sign in. Customers use the <a href="/app/">app</a>.</p>
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+<div class="field"><label for="u">Username</label><input class="in" id="u" name="username" autocomplete="username" autofocus required></div>
+<div class="field"><label for="p">Password</label><input class="in" id="p" name="password" type="password" autocomplete="current-password" required></div>
+<button class="btn block">Sign in</button>
+</form></div><script src="{% static 'pawn/js/app.js' %}"></script></body></html>
+
+
