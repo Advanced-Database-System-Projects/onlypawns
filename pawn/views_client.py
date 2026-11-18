@@ -1,6 +1,6 @@
 import secrets
 from functools import wraps
-
+from django.db.models import Q
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -119,8 +119,17 @@ def client_login(request):
     uid = request.session.get("pending_login") or known
     user = User.objects.filter(pk=uid, role__role_name=Role.CLIENT).first() if uid else None
     error = ""
+    step = request.POST.get("step", "")
     if request.method == "POST":
-        if request.POST.get("step") == "google" or not user:
+        if step == "typed":
+            who = request.POST.get("ident", "").strip()
+            user = User.objects.filter(role__role_name=Role.CLIENT).filter(
+                Q(username__iexact=who) | Q(email__iexact=who)).first() if who else None
+            if not user:
+                error = "Wrong Customer ID, email or PIN."
+        if step == "typed" and not user:
+            pass
+        elif step == "google" or not user:
             ident = google_identity(request)
             user = User.objects.filter(google_id=ident["sub"], role__role_name=Role.CLIENT).first() if ident else None
             if not user and ident:
@@ -155,10 +164,10 @@ def client_login(request):
                 else:
                     error = f"Wrong PIN. {left} {'try' if left == 1 else 'tries'} left."
                 user.save(update_fields=["failed_pin_attempts", "locked_until"])
-    return render(request, "app/login.html", {"pin_step": bool(user),
-                                              "user_first": user.first_name if user else "", "error": error,
+    show_pin = bool(user) and step != "typed"
+    return render(request, "app/login.html", {"pin_step": show_pin,
+                                              "user_first": user.first_name if show_pin else "", "error": error,
                                               "demo": not settings.GOOGLE_CLIENT_ID})
-
 
 def recover(request):
     error = ""

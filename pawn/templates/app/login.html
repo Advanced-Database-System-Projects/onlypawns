@@ -7,8 +7,13 @@
 <div class="field"><input class="in pin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="current-password" autofocus aria-label="PIN" required></div>
 <p class="soft small" style="margin:0 0 12px">It opens by itself after the 6th digit.</p><button class="btn block">Open</button></form>
 <p class="small"><a href="/app/login/?switch=1">Not you? Use another Google account</a> &middot; <a href="/app/recover/">Forgot PIN</a></p>
-{% else %}<p class="soft">Sign in with Google the first time on this phone. After that it's just your PIN.</p>
+{% else %}<p class="soft">Choose how you want to sign in.</p>
+<form method="post" class="card flat">{% csrf_token %}<input type="hidden" name="step" value="typed">
+<div class="field"><label for="ident">Customer ID or email</label><input class="in" id="ident" name="ident" autocomplete="username" autocapitalize="none" required></div>
+<div class="field"><label for="tpin">PIN</label><input class="in" id="tpin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="current-password" required></div>
+<button class="btn block">Sign in</button></form>
+<p class="soft small" style="text-align:center;margin:10px 0">or</p>
 <form method="post" class="card flat" {% if GOOGLE_CLIENT_ID %}data-autosubmit="1"{% endif %}>{% csrf_token %}<input type="hidden" name="step" value="google">
-{% include "app/_google.html" %}{% if not GOOGLE_CLIENT_ID %}<button class="btn block">Continue</button>{% endif %}</form>
+{% include "app/_google.html" %}{% if not GOOGLE_CLIENT_ID %}<button class="btn block">Continue with Google</button>{% endif %}</form>
 <p class="small">New here? <a href="/app/register/">Register</a></p>{% endif %}</div>
 {% endblock %}
