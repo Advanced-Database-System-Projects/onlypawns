@@ -31,6 +31,7 @@ def offline(request):
 staff = [
     path("login/", V.staff_login, name="staff_login"),
     path("logout/", V.staff_logout, name="staff_logout"),
+    path("password/", V.change_password, name="staff_password"),    
     path("", V.dashboard, name="staff_dashboard"),
     path("customers/", V.customers, name="customers"),
     path("customers/new/", V.customer_new, name="customer_new"),
@@ -64,10 +65,11 @@ staff = [
     path("admin/employees/", V.employees, name="employees"),
     path("admin/employees/new/", V.employee_edit, name="employee_new"),
     path("admin/employees/<int:pk>/edit/", V.employee_edit, name="employee_edit"),
+    path("admin/live-rate/", V.live_rate, name="live_rate"),
     path("admin/audit/", V.audit_log, name="audit_log"),
     path("admin/backups/", V.backups, name="backups"),
     path("admin/sms/", V.sms_log, name="sms_log"),
-]
+]   
 for key, (lst, new, edit, delete) in V.CRUDS.items():
     staff += [
         path(f"admin/{key}/", lst, name=f"{key}_list"),
@@ -95,6 +97,7 @@ client = [
     path("help/new/", C.support_new, name="client_support_new"),
     path("help/<int:pk>/", C.support_detail, name="client_support_detail"),
     path("profile/", C.profile, name="client_profile"),
+    path("pin/", C.change_pin, name="client_pin"),
     path("currency/", C.set_currency, name="client_currency"),
 ]
 

@@ -1,0 +1,12 @@
+{% extends "app/base.html" %}
+{% block content %}
+<h1>Change your PIN</h1>
+{% if done %}<div class="flash success">Your PIN was changed.</div>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+<form method="post" class="card flat">{% csrf_token %}
+<div class="field"><label for="old">Current PIN</label><input class="in pin" id="old" name="old" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+<div class="field"><label for="pin">New 6-digit PIN</label><input class="in pin" id="pin" name="pin" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+<div class="field"><label for="pin2">Type it again</label><input class="in pin" id="pin2" name="pin2" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required></div>
+<button class="btn block">Change PIN</button>
+<a class="btn ghost block" href="/app/profile/" style="margin-top:8px">Back</a></form>
+{% endblock %}

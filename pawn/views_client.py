@@ -1,6 +1,6 @@
 import secrets
 from functools import wraps
-
+from django.db.models import Q
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -119,8 +119,17 @@ def client_login(request):
     uid = request.session.get("pending_login") or known
     user = User.objects.filter(pk=uid, role__role_name=Role.CLIENT).first() if uid else None
     error = ""
+    step = request.POST.get("step", "")
     if request.method == "POST":
-        if request.POST.get("step") == "google" or not user:
+        if step == "typed":
+            who = request.POST.get("ident", "").strip()
+            user = User.objects.filter(role__role_name=Role.CLIENT).filter(
+                Q(username__iexact=who) | Q(email__iexact=who)).first() if who else None
+            if not user:
+                error = "Wrong Customer ID, email or PIN."
+        if step == "typed" and not user:
+            pass
+        elif step == "google" or not user:
             ident = google_identity(request)
             user = User.objects.filter(google_id=ident["sub"], role__role_name=Role.CLIENT).first() if ident else None
             if not user and ident:
@@ -155,10 +164,10 @@ def client_login(request):
                 else:
                     error = f"Wrong PIN. {left} {'try' if left == 1 else 'tries'} left."
                 user.save(update_fields=["failed_pin_attempts", "locked_until"])
-    return render(request, "app/login.html", {"pin_step": bool(user),
-                                              "user_first": user.first_name if user else "", "error": error,
+    show_pin = bool(user) and step != "typed"
+    return render(request, "app/login.html", {"pin_step": show_pin,
+                                              "user_first": user.first_name if show_pin else "", "error": error,
                                               "demo": not settings.GOOGLE_CLIENT_ID})
-
 
 def recover(request):
     error = ""
@@ -304,7 +313,32 @@ def support_detail(request, pk):
 def profile(request):
     c = request.cust
     return render(request, "app/profile.html", {"c": c, "currencies": Currency.objects.all(), "cur": request.session.get("cur", "PHP")})
-
+@client_only
+def change_pin(request):
+    error, done = "", False
+    if request.method == "POST":
+        user = request.user
+        old = request.POST.get("old", "")
+        new, new2 = request.POST.get("pin", ""), request.POST.get("pin2", "")
+        if user.is_locked():
+            error = "Too many wrong tries. Please try again later."
+        elif not check_password(old, user.pin_hash):
+            user.failed_pin_attempts += 1
+            if user.failed_pin_attempts >= 5:
+                user.locked_until = timezone.now() + timezone.timedelta(minutes=15)
+            user.save(update_fields=["failed_pin_attempts", "locked_until"])
+            error = "Your current PIN is wrong."
+        elif valid_pin(new, new2):
+            error = valid_pin(new, new2)
+        elif new == old:
+            error = "Your new PIN must be different from the old one."
+        else:
+            user.pin_hash = make_password(new)
+            user.failed_pin_attempts, user.locked_until = 0, None
+            user.save(update_fields=["pin_hash", "failed_pin_attempts", "locked_until"])
+            S.audit(user, "UPDATE", "users", user.pk, None, {"pin": "changed"})
+            done = True
+    return render(request, "app/change_pin.html", {"error": error, "done": done})
 
 @client_only
 @require_POST

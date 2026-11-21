@@ -251,15 +251,56 @@ class CategoryForm(StyledModelForm):
 
 
 class CurrencyForm(StyledModelForm):
+    rate_to_php = forms.DecimalField(
+        max_digits=12, decimal_places=6, required=False, min_value=0, label="Rate to PHP",
+        help_text="Pesos for 1 unit of this currency. Leave blank to fetch the live rate.")
+
     class Meta:
         model = Currency
         fields = ["code", "name", "symbol"]
+
+    def clean_code(self):
+        return self.cleaned_data["code"].upper()
+
+    def clean(self):
+        d = super().clean()
+        code = d.get("code")
+        if code and code != "PHP" and not d.get("rate_to_php") and not self.instance.pk:
+            from . import services as S
+            try:
+                d["rate_to_php"] = S.fetch_live_rate(code)
+            except S.PawnError as e:
+                self.add_error("rate_to_php", str(e))
+        return d
+
+    def save(self, commit=True):
+        cur = super().save(commit)
+        rate = self.cleaned_data.get("rate_to_php")
+        if commit and rate and cur.code != "PHP":
+            ExchangeRate.objects.create(currency=cur, rate_to_php=rate)
+        return cur
 
 
 class RateForm(StyledModelForm):
     class Meta:
         model = ExchangeRate
         fields = ["currency", "rate_to_php", "effective_date"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["rate_to_php"].required = False
+        self.fields["rate_to_php"].help_text = "Leave blank to fetch the live rate."
+
+    def clean(self):
+        d = super().clean()
+        cur = d.get("currency")
+        if cur and not d.get("rate_to_php"):
+            from . import services as S
+            try:
+                d["rate_to_php"] = S.fetch_live_rate(cur.code)
+            except S.PawnError as e:
+                self.add_error("rate_to_php", str(e))
+        return d
 
 
 class IDTypeForm(StyledModelForm):
@@ -283,7 +324,7 @@ class EmployeeForm(Styled):
 
     def __init__(self, *args, instance=None, **kwargs):
         self.instance = instance
-        if instance and not args and "initial" not in kwargs:
+        if instance and "initial" not in kwargs:
             kwargs["initial"] = dict(username=instance.user.username, first_name=instance.first_name,
                                      last_name=instance.last_name, role=instance.user.role, branch=instance.branch,
                                      position=instance.position, contact_no=instance.contact_no,
@@ -304,6 +345,9 @@ class EmployeeForm(Styled):
         p = self.cleaned_data["password"]
         if not self.instance and len(p) < 8:
             raise forms.ValidationError("Set a password with at least 8 characters.")
+        if p:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(p)
         if p and len(p) < 8:
             raise forms.ValidationError("Use at least 8 characters.")
         return p
@@ -328,7 +372,41 @@ class EmployeeForm(Styled):
             setattr(emp, f, d[f])
         emp.save()
         return emp
+class StaffPasswordForm(Styled):
+    old = forms.CharField(label="Current password", widget=forms.PasswordInput(render_value=False))
+    new = forms.CharField(label="New password", widget=forms.PasswordInput(render_value=False),
+                          help_text="At least 8 characters.")
+    new2 = forms.CharField(label="Type the new password again", widget=forms.PasswordInput(render_value=False))
 
+    def __init__(self, user, *args, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_old(self):
+        if not self.user.check_password(self.cleaned_data["old"]):
+            raise forms.ValidationError("Your current password is wrong.")
+        return self.cleaned_data["old"]
+
+    def clean(self):
+        d = super().clean()
+        new, new2, old = d.get("new"), d.get("new2"), d.get("old")
+        if new and new2 and new != new2:
+            self.add_error("new2", "The two passwords don't match.")
+        elif new and old and new == old:
+            self.add_error("new", "Your new password must be different from the old one.")
+        elif new:
+            from django.contrib.auth.password_validation import validate_password
+            try:
+                validate_password(new, self.user)
+            except forms.ValidationError as e:
+                self.add_error("new", e)
+        return d
+
+    def save(self):
+        self.user.set_password(self.cleaned_data["new"])
+        self.user.failed_pin_attempts, self.user.locked_until = 0, None
+        self.user.save()
+        return self.user
 
 class ReplyForm(Styled):
     message = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}))

@@ -1,8 +1,7 @@
 from datetime import timedelta
 from functools import wraps
-
 from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.core.paginator import Paginator
 from django.db.models import Count, ProtectedError, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse
@@ -11,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
+from django.forms import Form
 
 from . import forms as F
 from . import services as S
@@ -117,6 +117,16 @@ def staff_login(request):
             error = "That username and password don't match."
     return render(request, "staff/login.html", {"error": error})
 
+@staff_only()
+def change_password(request):
+    form = F.StaffPasswordForm(request.user, request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        update_session_auth_hash(request, request.user)
+        S.audit(request.user, "UPDATE", "users", request.user.pk, None, {"password": "changed"})
+        messages.success(request, "Your password was changed.")
+        return redirect("staff_dashboard")
+    return form_page(request, "Change my password", form, "/staff/", submit="Change password")
 
 def staff_logout(request):
     logout(request)
@@ -544,7 +554,8 @@ REPORTS = [("daily", "Daily Transaction Report", "Every transaction in a date ra
 @staff_only(CASHIER)
 def reports(request):
     allowed = REPORTS if request.user.is_admin_role else REPORTS[:1]
-    return render(request, "staff/reports.html", {"reports": allowed, "today": timezone.localdate()})
+    today = timezone.localdate()
+    return render(request, "staff/reports.html", {"reports": allowed, "today": today, "month_start": today.replace(day=1)})
 
 
 @staff_only(CASHIER)
@@ -596,9 +607,16 @@ def support_detail(request, pk):
     form = F.ReplyForm(request.POST or None, initial={"status": "In Progress"})
     if request.method == "POST" and form.is_valid():
         SupportMessage.objects.create(support_ticket=s, sender_user=request.user, message=form.cleaned_data["message"])
+        was_resolved = s.status == "Resolved"
         s.assigned_to = s.assigned_to or request.emp
         s.status = form.cleaned_data["status"] or s.status
-        s.resolved_at = timezone.now() if s.status == "Resolved" else None
+        if s.status == "Resolved":
+            if not was_resolved:  # only stamp the first time it gets resolved
+                s.resolved_at = timezone.now()
+                s.resolved_by = request.emp
+        else:  # reopened, so clear it
+            s.resolved_at = None
+            s.resolved_by = None
         s.save()
         messages.success(request, "Reply sent.")
         return redirect("support_detail", pk=s.pk)
@@ -709,7 +727,7 @@ class CrudUpdate(CrudFormMixin, UpdateView):
 
 class CrudDelete(CrudBase, DeleteView):
     http_method_names = ["post"]        # deleting is POST only, the confirm dialog is in the list page
-
+    form_class = Form
     def get_success_url(self):
         return reverse(f"{self.key}_list")
 
@@ -760,6 +778,21 @@ EMPLOYEE_SORT = [("last_name", "Name (A to Z)"), ("branch__branch_name", "Branch
                  ("status", "Status")]
 
 
+
+@staff_only(ADMIN)
+def live_rate(request):
+    from django.http import JsonResponse
+    code = request.GET.get("code", "").strip().upper()
+    if len(code) != 3 or not code.isalpha():
+        return JsonResponse({"error": "Enter a 3-letter currency code."}, status=400)
+    if code == "PHP":
+        return JsonResponse({"code": code, "rate": "1.000000"})
+    try:
+        rate = S.fetch_live_rate(code)
+    except S.PawnError as e:
+        return JsonResponse({"error": str(e)}, status=502)
+    return JsonResponse({"code": code, "rate": str(rate)})
+
 @staff_only(ADMIN)
 def employees(request):
     qs = Employee.objects.select_related("user", "user__role", "branch")
@@ -803,8 +836,13 @@ def audit_log(request):
 def backups(request):
     if request.method == "POST":
         from django.core.management import call_command
-        call_command("backup")
-        messages.success(request, "Backup finished.")
+        import io
+        err = io.StringIO()
+        call_command("backup", stderr=err)
+        if err.getvalue():
+            messages.error(request, err.getvalue().strip())
+        else:
+            messages.success(request, "Backup finished.")
         return redirect("backups")
     rows = [{"cells": [f"{timezone.localtime(b.run_at):%b %d, %Y %I:%M %p}", b.file_path, f"{b.size_mb} MB", b.status], "badge": 3}
             for b in BackupLog.objects.all()[:30]]

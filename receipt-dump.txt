@@ -1,0 +1,303 @@
+﻿=== services.py: receipt code ===
+
+pawn\services.py:26:    Item, ItemCategory, ItemImage, MobileLoad, PawnTicket, Receipt, Redemption, 
+Remittance, Renewal, SMSLog,
+pawn\services.py:130:    import qrcode
+pawn\services.py:131:    img = qrcode.make(data, box_size=8, border=2)
+pawn\services.py:170:# --------------------------------------------------------------------------- 
+receipts (PDF)
+pawn\services.py:172:    from reportlab.graphics.barcode.qr import QrCodeWidget
+pawn\services.py:173:    from reportlab.graphics.shapes import Drawing
+pawn\services.py:174:    widget = QrCodeWidget(data)
+pawn\services.py:181:def issue_receipt(txn, rtype, title, lines, footer=""):
+pawn\services.py:182:    from reportlab.graphics import renderPDF
+pawn\services.py:183:    from reportlab.lib.pagesizes import A5
+pawn\services.py:184:    from reportlab.pdfgen import canvas
+pawn\services.py:187:    c = canvas.Canvas(buf, pagesize=A5)
+pawn\services.py:222:    receipt_no = f"R-{txn.transaction_no[4:]}"
+pawn\services.py:223:    receipt = Receipt(transaction=txn, receipt_no=receipt_no, receipt_type=rtype)
+pawn\services.py:224:    receipt.file.save(f"{receipt_no}.pdf", ContentFile(buf.getvalue()), 
+save=False)
+pawn\services.py:225:    receipt.save()
+pawn\services.py:226:    return receipt
+pawn\services.py:280:    issue_receipt(txn, "Pawn Ticket", "PAWN TICKET", [
+pawn\services.py:289:                       f"Maturity {maturity:%b %d, %Y}.", "Receipt", ticket)
+pawn\services.py:316:    issue_receipt(txn, "Redemption", "REDEMPTION RECEIPT", [
+pawn\services.py:345:    issue_receipt(txn, "Renewal", "RENEWAL RECEIPT", [
+pawn\services.py:373:    issue_receipt(txn, "Padala", "PADALA RECEIPT", [
+pawn\services.py:403:    issue_receipt(txn, "Load", "LOAD CONFIRMATION", [
+pawn\services.py:537:        return ("To redeem, go to any branch with your ticket (or its QR code) 
+and a valid ID. You pay the loan, the interest and the service fee. The cashier hands the item back 
+and prints your receipt.", False)
+pawn\services.py:707:def report_pdf(rep):
+pawn\services.py:708:    from reportlab.lib import colors
+pawn\services.py:709:    from reportlab.lib.pagesizes import A4, landscape
+pawn\services.py:710:    from reportlab.lib.styles import getSampleStyleSheet
+pawn\services.py:711:    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, 
+TableStyle
+pawn\services.py:713:    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=28, 
+rightMargin=28, topMargin=28, bottomMargin=28)
+
+
+
+=== services.py: imports ===
+
+pawn\services.py:6:import calendar
+pawn\services.py:7:import hashlib
+pawn\services.py:8:import io
+pawn\services.py:9:import json
+pawn\services.py:10:import secrets
+pawn\services.py:11:import urllib.parse
+pawn\services.py:12:import urllib.request
+pawn\services.py:13:from datetime import date, datetime, timedelta
+pawn\services.py:14:from decimal import ROUND_HALF_UP, Decimal
+pawn\services.py:16:from cryptography.fernet import Fernet
+pawn\services.py:17:from django.conf import settings
+pawn\services.py:18:from django.core import signing
+pawn\services.py:19:from django.core.files.base import ContentFile
+pawn\services.py:20:from django.db import transaction as db_transaction
+pawn\services.py:21:from django.db.models import Count, Q, Sum
+pawn\services.py:22:from django.utils import timezone
+pawn\services.py:24:from .models import (
+
+
+
+=== receipt function bodies ===
+
+> pawn\services.py:181:def issue_receipt(txn, rtype, title, lines, footer=""):
+  pawn\services.py:182:    from reportlab.graphics import renderPDF
+  pawn\services.py:183:    from reportlab.lib.pagesizes import A5
+  pawn\services.py:184:    from reportlab.pdfgen import canvas
+  pawn\services.py:185:
+  pawn\services.py:186:    buf = io.BytesIO()
+  pawn\services.py:187:    c = canvas.Canvas(buf, pagesize=A5)
+  pawn\services.py:188:    w, h = A5
+  pawn\services.py:189:    c.setFillColorRGB(0.04, 0.04, 0.06)
+  pawn\services.py:190:    c.rect(0, h - 70, w, 70, fill=1, stroke=0)
+  pawn\services.py:191:    c.setFillColorRGB(1, 0.18, 0.59)
+  pawn\services.py:192:    c.setFont("Helvetica-Bold", 20)
+  pawn\services.py:193:    c.drawString(28, h - 38, "ONLY PAWNS")
+  pawn\services.py:194:    c.setFillColorRGB(1, 1, 1)
+  pawn\services.py:195:    c.setFont("Helvetica", 10)
+  pawn\services.py:196:    c.drawString(28, h - 54, f"{txn.branch.branch_name}  |  
+{txn.branch.contact_no}")
+  pawn\services.py:197:    c.setFillColorRGB(0.1, 0.1, 0.1)
+  pawn\services.py:198:    c.setFont("Helvetica-Bold", 14)
+  pawn\services.py:199:    c.drawString(28, h - 100, title)
+  pawn\services.py:200:    c.setFont("Helvetica", 9)
+  pawn\services.py:201:    c.drawString(28, h - 114, f"Transaction No. {txn.transaction_no}")
+  pawn\services.py:202:    c.drawRightString(w - 28, h - 114, 
+timezone.localtime(txn.created_at).strftime("%b %d, %Y %I:%M %p"))
+  pawn\services.py:203:    y = h - 142
+  pawn\services.py:204:    for label, value in lines:
+  pawn\services.py:205:        c.setFont("Helvetica", 9.5)
+  pawn\services.py:206:        c.setFillColorRGB(0.4, 0.4, 0.4)
+  pawn\services.py:207:        c.drawString(28, y, str(label))
+  pawn\services.py:208:        c.setFillColorRGB(0.05, 0.05, 0.05)
+  pawn\services.py:209:        c.setFont("Helvetica-Bold", 9.5)
+  pawn\services.py:210:        c.drawRightString(w - 28, y, str(value)[:60])
+  pawn\services.py:211:        y -= 16
+  pawn\services.py:212:    y -= 6
+  pawn\services.py:213:    renderPDF.draw(_qr_drawing(txn.qr_token), c, 28, max(y - 84, 60))
+  pawn\services.py:214:    c.setFont("Helvetica", 7.5)
+  pawn\services.py:215:    c.setFillColorRGB(0.4, 0.4, 0.4)
+  pawn\services.py:216:    c.drawString(130, max(y - 84, 60) + 40, "Scan this code at the counter to 
+pull up this transaction.")
+  pawn\services.py:217:    if txn.employee:
+  pawn\services.py:218:        c.drawString(130, max(y - 84, 60) + 28, f"Handled by 
+{txn.employee.full_name}")
+  pawn\services.py:219:    if footer:
+  pawn\services.py:220:        c.drawString(28, 40, footer[:110])
+  pawn\services.py:221:    c.save()
+  pawn\services.py:222:    receipt_no = f"R-{txn.transaction_no[4:]}"
+  pawn\services.py:223:    receipt = Receipt(transaction=txn, receipt_no=receipt_no, 
+receipt_type=rtype)
+  pawn\services.py:224:    receipt.file.save(f"{receipt_no}.pdf", ContentFile(buf.getvalue()), 
+save=False)
+  pawn\services.py:225:    receipt.save()
+  pawn\services.py:226:    return receipt
+  pawn\services.py:227:
+  pawn\services.py:228:
+  pawn\services.py:229:# 
+------------------------------------------------------------------------------ appraisal
+  pawn\services.py:230:@db_transaction.atomic
+  pawn\services.py:231:def create_appraisal(employee, customer, category, item_type, description, 
+condition, value, suggested, remarks, images):
+  pawn\services.py:232:    require_active(customer)
+  pawn\services.py:233:    value = q(value)
+  pawn\services.py:234:    suggested = q(suggested if suggested not in (None, "") else value * 
+settings.PAWN_LOAN_TO_VALUE)
+  pawn\services.py:235:    if suggested > value:
+  pawn\services.py:236:        raise PawnError("The suggested loan cannot be higher than the appraised 
+value.")
+  pawn\services.py:237:    item = Item.objects.create(customer=customer, category=category, 
+item_type=item_type, description=description,
+  pawn\services.py:238:                               item_condition=condition, appraised_value=value)
+  pawn\services.py:239:    for f in images:
+  pawn\services.py:240:        ItemImage.objects.create(item=item, image=f)
+  pawn\services.py:241:    txn = new_txn(TransactionType.APPRAISE, customer, employee)
+  pawn\services.py:242:    appraisal = Appraisal.objects.create(transaction=txn, item=item, 
+appraiser=employee, appraised_value=value,
+  pawn\services.py:243:                                         suggested_loan=suggested, 
+remarks=remarks)
+  pawn\services.py:244:    audit(employee.user, "CREATE", "appraisals", appraisal.pk, None, {"item": 
+item.pk, "value": str(value)})
+  pawn\services.py:245:    return appraisal
+  pawn\services.py:246:
+  pawn\services.py:247:
+  pawn\services.py:248:@db_transaction.atomic
+  pawn\services.py:249:def decline_appraisal(appraisal, employee):
+  pawn\services.py:250:    if appraisal.result != "Pending":
+  pawn\services.py:251:        raise PawnError("This appraisal was already answered.")
+  pawn\services.py:252:    appraisal.result = "Declined"
+  pawn\services.py:253:    appraisal.save(update_fields=["result"])
+  pawn\services.py:254:    audit(employee.user, "UPDATE", "appraisals", appraisal.pk, {"result": 
+"Pending"}, {"result": "Declined"})
+  pawn\services.py:255:
+  pawn\services.py:256:
+  pawn\services.py:257:@db_transaction.atomic
+  pawn\services.py:258:def create_ticket(appraisal, loan_amount, employee, 
+kind=TransactionType.SANGLA):
+  pawn\services.py:259:    if appraisal.result != "Pending":
+  pawn\services.py:260:        raise PawnError("This appraisal was already answered.")
+  pawn\services.py:261:    loan_amount = q(loan_amount)
+  pawn\services.py:262:    item, customer = appraisal.item, appraisal.item.customer
+  pawn\services.py:263:    require_active(customer)
+  pawn\services.py:264:    if loan_amount <= 0 or loan_amount > appraisal.suggested_loan:
+  pawn\services.py:265:        raise PawnError(f"The loan must be more than zero and no higher than 
+PHP {peso(appraisal.suggested_loan)}.")
+  pawn\services.py:266:    if kind == TransactionType.LOAN and 
+item.category.category_name.lower().startswith("jewel"):
+  pawn\services.py:267:        raise PawnError("Jewelry is pawned as Sangla. Use Loan for gadgets, 
+appliances and other items.")
+  pawn\services.py:268:    cat, today = item.category, timezone.localdate()
+  pawn\services.py:269:    txn = new_txn(kind, customer, employee, amount=loan_amount)
+  pawn\services.py:270:    maturity = add_months(today, 1)
+  pawn\services.py:271:    ticket = PawnTicket.objects.create(
+> pawn\services.py:707:def report_pdf(rep):
+  pawn\services.py:708:    from reportlab.lib import colors
+  pawn\services.py:709:    from reportlab.lib.pagesizes import A4, landscape
+  pawn\services.py:710:    from reportlab.lib.styles import getSampleStyleSheet
+  pawn\services.py:711:    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, 
+TableStyle
+  pawn\services.py:712:    buf = io.BytesIO()
+  pawn\services.py:713:    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=28, 
+rightMargin=28, topMargin=28, bottomMargin=28)
+  pawn\services.py:714:    st = getSampleStyleSheet()
+  pawn\services.py:715:    parts = [Paragraph("Only Pawns", st["Title"]), Paragraph(rep["title"], 
+st["Heading3"]), Spacer(1, 8)]
+  pawn\services.py:716:    data = [rep["headers"]] + (rep["rows"] or [["No records"] + [""] * 
+(len(rep["headers"]) - 1)])
+  pawn\services.py:717:    tbl = Table(data, repeatRows=1)
+  pawn\services.py:718:    tbl.setStyle(TableStyle([
+  pawn\services.py:719:        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#14141C")), 
+("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+  pawn\services.py:720:        ("FONTSIZE", (0, 0), (-1, -1), 8), ("GRID", (0, 0), (-1, -1), 0.25, 
+colors.HexColor("#BBBBBB")),
+  pawn\services.py:721:        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, 
+colors.HexColor("#F6F2F5")])]))
+  pawn\services.py:722:    parts += [tbl, Spacer(1, 10)] + [Paragraph(s, st["Normal"]) for s in 
+rep["summary"]]
+  pawn\services.py:723:    doc.build(parts)
+  pawn\services.py:724:    return buf.getvalue()
+  pawn\services.py:725:
+  pawn\services.py:726:
+  pawn\services.py:727:def report_xlsx(rep):
+  pawn\services.py:728:    from openpyxl import Workbook
+  pawn\services.py:729:    from openpyxl.styles import Font, PatternFill
+  pawn\services.py:730:    wb = Workbook()
+  pawn\services.py:731:    ws = wb.active
+  pawn\services.py:732:    ws.title = "Report"
+  pawn\services.py:733:    ws.append([rep["title"]])
+  pawn\services.py:734:    ws["A1"].font = Font(bold=True, size=13)
+  pawn\services.py:735:    ws.append([])
+  pawn\services.py:736:    ws.append(rep["headers"])
+  pawn\services.py:737:    for c in ws[3]:
+  pawn\services.py:738:        c.font = Font(bold=True, color="FFFFFF")
+  pawn\services.py:739:        c.fill = PatternFill("solid", fgColor="14141C")
+  pawn\services.py:740:    for r in rep["rows"]:
+  pawn\services.py:741:        ws.append(r)
+  pawn\services.py:742:    ws.append([])
+  pawn\services.py:743:    for s in rep["summary"]:
+  pawn\services.py:744:        ws.append([s])
+  pawn\services.py:745:    for col in ws.columns:
+  pawn\services.py:746:        ws.column_dimensions[col[0].column_letter].width = 
+min(max(len(str(c.value or "")) for c in col) + 3, 40)
+  pawn\services.py:747:    buf = io.BytesIO()
+  pawn\services.py:748:    wb.save(buf)
+  pawn\services.py:749:    return buf.getvalue()
+
+
+
+=== views using receipts ===
+
+pawn\views_staff.py:19:    ExchangeRate, IDType, ItemCategory, MobileLoad, PawnTicket, Receipt, 
+Remittance, Role, SMSLog, SupportMessage,
+pawn\views_staff.py:352:        "images": t.item.images.all(), "receipt": getattr(t.transaction, 
+"receipt", None)})
+pawn\views_staff.py:391:    return render(request, "staff/txn_detail.html", {"t": t, "ticket": ticket, 
+"receipt": getattr(t, "receipt", None),
+pawn\views_staff.py:413:def receipt_file(request, txn_no):
+pawn\views_staff.py:414:    """Receipts are only handed to employees or to the customer they belong 
+to."""
+pawn\views_staff.py:415:    r = 
+get_object_or_404(Receipt.objects.select_related("transaction__customer"), 
+transaction__transaction_no=txn_no)
+pawn\views_staff.py:420:    return FileResponse(r.file.open("rb"), content_type="application/pdf", 
+filename=f"{r.receipt_no}.pdf")
+
+
+
+=== theme colors ===
+
+pawn\static\pawn\css\app.css:2:  --ink:#0A0A0F; --panel:#14141C; --raised:#1D1D29; --line:#2A2A3A; 
+--pink:#FF2E97; --pink-dim:#B81F6B;
+pawn\static\pawn\css\glass.css:7:  --ink:#0c0a14; --panel:#17121f; --raised:rgba(255,255,255,.07); 
+--line:rgba(255,255,255,.12);
+pawn\static\pawn\css\glass.css:8:  --white:#fff; --soft:#b9b4cc; --pink:#FF3D9A; --pink-dim:#B81F6B; 
+--ok:#4FE3B0; --warn:#FFC857; --bad:#FF6B84;
+pawn\static\pawn\css\glass.css:9:  --bg:radial-gradient(1200px 700px at 12% -10%,#3a0f2c 
+0%,transparent 60%),radial-gradient(900px 600px at 100% 10%,#1d1450 0%,transparent 55%),#0c0a14;
+pawn\static\pawn\css\glass.css:16:  --ink:#f6eff5; --panel:#ffffff; --raised:rgba(255,255,255,.7); 
+--line:rgba(60,30,70,.14);
+pawn\static\pawn\css\glass.css:17:  --white:#1b1224; --soft:#5f536d; --pink:#D9107A; 
+--pink-dim:#a80d5f; --ok:#0b8a60; --warn:#9a6a00; --bad:#c5223a;
+pawn\static\pawn\css\glass.css:18:  --bg:radial-gradient(1200px 700px at 12% -10%,#ffd3ea 
+0%,transparent 60%),radial-gradient(900px 600px at 100% 10%,#d9d6ff 0%,transparent 55%),#f6eff5;
+pawn\static\pawn\css\pawnshop.css:14:  --brand:#0057E7; --brand-dark:#0043B8; --brand-soft:#E8F0FF;
+pawn\static\pawn\css\pawnshop.css:15:  --gold:#F5B301; --gold-ink:#3A2A00;
+pawn\static\pawn\css\pawnshop.css:16:  --ink:#F1F5FC; --panel:#FFFFFF; --raised:#EAF1FD; 
+--line:#D5E0F3;
+pawn\static\pawn\css\pawnshop.css:18:  --pink:#0057E7; --pink-dim:#0043B8;
+pawn\static\pawn\css\pawnshop.css:21:  --bg:#F1F5FC;
+pawn\static\pawn\css\pawnshop.css:30:  --brand:#2D6CF0; --brand-dark:#1F55C8; --brand-soft:#17285A;
+pawn\static\pawn\css\pawnshop.css:31:  --gold:#F5B301; --gold-ink:#3A2A00;
+pawn\static\pawn\css\pawnshop.css:32:  --ink:#0A1128; --panel:#111B3A; --raised:#18264D; 
+--line:#2A3B70;
+pawn\static\pawn\css\pawnshop.css:34:  --pink:#7DB0FF; --pink-dim:#2D6CF0;
+pawn\static\pawn\css\pawnshop.css:37:  --bg:#0A1128;
+
+
+
+=== static icons ===
+
+Name                
+----                
+apple-touch-icon.png
+icon-192.png        
+icon-512.png        
+logo-badge.png      
+maskable-512.png    
+
+
+
+=== requirements ===
+Django>=5.0,<5.3
+djangorestframework>=3.15
+Pillow>=10.0
+reportlab>=4.0
+openpyxl>=3.1
+qrcode>=7.4
+cryptography>=42.0
+argon2-cffi>=23.1
+
